@@ -15,10 +15,12 @@ issues:
 linters:
   enable:
     - bodyclose
+    - exportloopref
     - gofumpt
     - goimports
     - gosec
     - nilerr
+    - predeclared
     - revive
     - rowserrcheck
     - sqlclosecheck

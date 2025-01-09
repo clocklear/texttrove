@@ -1,7 +1,7 @@
 package app
 
 import (
-	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/v2/key"
 )
 
 type KeyMap struct {
@@ -44,8 +44,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("ctrl+c", "quit"),
 		),
 		Send: key.NewBinding(
-			key.WithKeys("ctrl+end"),
-			key.WithHelp("ctrl+end", "send message"),
+			key.WithKeys("ctrl+enter"),
+			key.WithHelp("ctrl+enter", "send message"),
 		),
 		NewChat: key.NewBinding(
 			key.WithKeys("ctrl+n"),

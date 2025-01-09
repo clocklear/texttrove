@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/clocklear/texttrove/app"
 	"github.com/tmc/langchaingo/llms/ollama"
 )
@@ -28,11 +28,15 @@ func main() {
 	}
 
 	// Create a new app model
-	cfg := app.DefaultConfig()
+	cfg, err := app.DefaultConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create default config: %v\n", err)
+		os.Exit(1)
+	}
 	cfg.LLM = llm
 	appModel := app.New(cfg)
 
-	p := tea.NewProgram(appModel, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(appModel, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithKeyboardEnhancements())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Oof: %v\n", err)
 	}

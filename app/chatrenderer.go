@@ -6,14 +6,16 @@ import (
 
 	"github.com/clocklear/texttrove/pkg/models"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/tmc/langchaingo/llms"
 )
 
 type chatRenderer struct {
-	senderStyle lipgloss.Style
-	llmStyle    lipgloss.Style
-	errorStyle  lipgloss.Style
+	senderStyle      lipgloss.Style
+	llmStyle         lipgloss.Style
+	errorStyle       lipgloss.Style
+	markdownRenderer *glamour.TermRenderer
 }
 
 func (r *chatRenderer) Render(c *models.Chat) string {
@@ -33,17 +35,18 @@ func (r *chatRenderer) Render(c *models.Chat) string {
 }
 
 func (r *chatRenderer) renderMessageContent(m *llms.MessageContent) (string, error) {
-	var buf strings.Builder
+	var outputBuf, messageBuf strings.Builder
+
 	// Start by writing the role of the message
 	switch m.Role {
 	case llms.ChatMessageTypeHuman:
-		buf.WriteString(r.senderStyle.Render("You: "))
+		outputBuf.WriteString(r.senderStyle.Render("You: "))
 	case llms.ChatMessageTypeSystem:
-		buf.WriteString(r.llmStyle.Render("System: "))
+		outputBuf.WriteString(r.llmStyle.Render("System: "))
 	case llms.ChatMessageTypeAI:
-		buf.WriteString(r.llmStyle.Render("AI: "))
+		outputBuf.WriteString(r.llmStyle.Render("AI: "))
 	default:
-		buf.WriteString(r.llmStyle.Render("Bot: "))
+		outputBuf.WriteString(r.llmStyle.Render("Bot: "))
 	}
 	// MessageContent has a role and a sequence of parts
 	// Each of the parts _might_ implement Stringer.
@@ -52,18 +55,29 @@ func (r *chatRenderer) renderMessageContent(m *llms.MessageContent) (string, err
 	for _, part := range m.Parts {
 		switch p := part.(type) {
 		case fmt.Stringer:
-			_, err := buf.WriteString(p.String())
+			_, err := messageBuf.WriteString(p.String())
 			if err != nil {
 				return "", err
 			}
 		default:
-			_, err := buf.WriteString(fmt.Sprintf("%T", p))
+			_, err := messageBuf.WriteString(fmt.Sprintf("%T", p))
 			if err != nil {
 				return "", err
 			}
 		}
 		// New line
-		buf.WriteString("\n")
+		messageBuf.WriteString("\n")
 	}
-	return buf.String(), nil
+
+	// Pass the message through the markdown renderer
+	message, err := r.markdownRenderer.Render(messageBuf.String())
+	if err != nil {
+		return "", err
+	}
+
+	// Append the rendered message to the output buffer
+	outputBuf.WriteString(message)
+
+	// Render the output buffer
+	return outputBuf.String(), nil
 }

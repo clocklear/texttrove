@@ -307,7 +307,9 @@ func (s Style) Render(strs ...string) string {
 		te = te.Underline()
 	}
 	if reverse {
-		teWhitespace = teWhitespace.Reverse()
+		if reverse {
+			teWhitespace = teWhitespace.Reverse()
+		}
 		te = te.Reverse()
 	}
 	if blink {
@@ -353,8 +355,6 @@ func (s Style) Render(strs ...string) string {
 
 	// Potentially convert tabs to spaces
 	str = s.maybeConvertTabs(str)
-	// carriage returns can cause strange behaviour when rendering.
-	str = strings.ReplaceAll(str, "\r\n", "\n")
 
 	// Strip newlines in single line mode
 	if inline {
@@ -564,14 +564,14 @@ func pad(str string, n int, style *termenv.Style) string {
 	return b.String()
 }
 
-func max(a, b int) int { //nolint:unparam,predeclared
+func max(a, b int) int { //nolint:unparam
 	if a > b {
 		return a
 	}
 	return b
 }
 
-func min(a, b int) int { //nolint:predeclared
+func min(a, b int) int {
 	if a < b {
 		return a
 	}

@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/bubbles/v2/cursor"
+	"github.com/charmbracelet/bubbles/v2/help"
+	"github.com/charmbracelet/bubbles/v2/key"
+	"github.com/charmbracelet/bubbles/v2/spinner"
+	"github.com/charmbracelet/bubbles/v2/textarea"
+	"github.com/charmbracelet/bubbles/v2/viewport"
+	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/clocklear/texttrove/pkg/models"
 
 	"github.com/tmc/langchaingo/llms/ollama"
@@ -28,26 +29,32 @@ const (
 )
 
 type Config struct {
-	AppName         string
-	ChatInputHeight int
-	Keys            KeyMap
-	SenderColor     uint
-	LLMColor        uint
-	ErrorColor      uint
-	SpinnerColor    uint
-	LLM             *ollama.LLM
+	AppName          string
+	ChatInputHeight  int
+	Keys             KeyMap
+	SenderColor      uint
+	LLMColor         uint
+	ErrorColor       uint
+	SpinnerColor     uint
+	LLM              *ollama.LLM
+	MarkdownRenderer *glamour.TermRenderer
 }
 
-func DefaultConfig() Config {
-	return Config{
-		AppName:         "TextTrove",
-		ChatInputHeight: 5,
-		SenderColor:     5,  // ANSI Magenta
-		LLMColor:        4,  // ANSI Blue
-		ErrorColor:      1,  // ANSI Red
-		SpinnerColor:    69, // ANSI Light Blue
-		Keys:            DefaultKeyMap(),
+func DefaultConfig() (Config, error) {
+	g, err := glamour.NewTermRenderer(glamour.WithAutoStyle())
+	if err != nil {
+		return Config{}, err
 	}
+	return Config{
+		AppName:          "TextTrove",
+		ChatInputHeight:  5,
+		SenderColor:      5,  // ANSI Magenta
+		LLMColor:         4,  // ANSI Blue
+		ErrorColor:       1,  // ANSI Red
+		SpinnerColor:     69, // ANSI Light Blue
+		Keys:             DefaultKeyMap(),
+		MarkdownRenderer: g,
+	}, nil
 }
 
 var (
@@ -86,9 +93,9 @@ func New(cfg Config) Model {
 	ta.Prompt = "┃ "
 	ta.SetHeight(cfg.ChatInputHeight)
 	ta.CharLimit = 0
-	ta.Focus()                                       // Direct keyboard input here
-	ta.FocusedStyle.CursorLine = lipgloss.NewStyle() // Remove cursor line styling
-	ta.ShowLineNumbers = false                       // Hide line numbers
+	ta.Focus()                                         // Direct keyboard input here
+	ta.Styles.Focused.CursorLine = lipgloss.NewStyle() // Remove cursor line styling
+	ta.ShowLineNumbers = false                         // Hide line numbers
 
 	// Create a spinner for showing that the app is loading
 	spn := spinner.New()
@@ -103,9 +110,10 @@ func New(cfg Config) Model {
 		llmStream: make(chan responseMsg),
 		chats:     []models.Chat{models.NewChat()},
 		chatRenderer: chatRenderer{
-			senderStyle: lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.SenderColor)),
-			llmStyle:    lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.LLMColor)),
-			errorStyle:  lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.ErrorColor)),
+			senderStyle:      lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.SenderColor)),
+			llmStyle:         lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.LLMColor)),
+			errorStyle:       lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.ErrorColor)),
+			markdownRenderer: cfg.MarkdownRenderer,
 		},
 		status: StatusInitializing,
 	}
@@ -119,8 +127,8 @@ func (m *Model) setStatus(s status) {
 	m.status = s
 }
 
-func (m Model) Init() tea.Cmd {
-	return tea.Batch(
+func (m Model) Init() (tea.Model, tea.Cmd) {
+	return m, tea.Batch(
 		textarea.Blink,
 		waitForActivity(m.llmStream),
 	)
@@ -148,15 +156,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// we can initialize the viewport. The initial dimensions come in
 			// quickly, though asynchronously, which is why we wait for them
 			// here.
-			m.viewport = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
-			m.viewport.YPosition = headerHeight
+			m.viewport = viewport.New(viewport.WithWidth(msg.Width), viewport.WithHeight(msg.Height-verticalMarginHeight))
+			m.viewport.SetYOffset(headerHeight)
 			m.textarea.SetWidth(msg.Width)
 			m.ready = true
 			m.setStatus(StatusReady)
 		} else {
-			m.viewport.Width = msg.Width
+			m.viewport.SetWidth(msg.Width)
 			m.textarea.SetWidth(msg.Width)
-			m.viewport.Height = msg.Height - verticalMarginHeight
+			m.viewport.SetHeight(msg.Height - verticalMarginHeight)
 		}
 	case tea.KeyMsg:
 		switch {
@@ -195,6 +203,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !chat.IsStreaming() {
 				// Reset the chat
 				chat.Reset()
+				m.viewport.SetContent("")
 				m.setStatus(StatusReady)
 			}
 
@@ -271,7 +280,7 @@ func (m Model) headerView() string {
 	// 	titleText += " " + m.spinner.View()
 	// }
 	title := titleStyle.Render(titleText)
-	line := strings.Repeat("─", max(0, m.viewport.Width-lipgloss.Width(title)))
+	line := strings.Repeat("─", max(0, m.viewport.Width()-lipgloss.Width(title)))
 	return lipgloss.JoinHorizontal(lipgloss.Center, title, line)
 }
 
@@ -284,7 +293,7 @@ func (m Model) footerView() string {
 		info += " " + m.spinner.View()
 	}
 	info = infoStyle.Render(info)
-	line := strings.Repeat("─", max(0, m.viewport.Width-lipgloss.Width(info)))
+	line := strings.Repeat("─", max(0, m.viewport.Width()-lipgloss.Width(info)))
 	return lipgloss.JoinHorizontal(lipgloss.Center, line, info)
 }
 
