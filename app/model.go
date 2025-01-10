@@ -143,6 +143,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Grab a handle for the selected chat
 	chat := m.activeChat()
 
+	// We want to propagate all non-keyboard events to the viewport.
+	propagateEventToViewport := true
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		headerHeight := lipgloss.Height(m.headerView())
@@ -212,6 +215,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textarea, cmd = m.textarea.Update(msg)
 			cmds = append(cmds, cmd)
 		}
+		// We don't want to propagate the event to the viewport
+		propagateEventToViewport = false
 
 	case spinner.TickMsg:
 		if !chat.IsStreaming() {
@@ -247,9 +252,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, waitForActivity(m.llmStream))
 	}
 
-	// Handle keyboard and mouse events in the viewport
-	m.viewport, cmd = m.viewport.Update(msg)
-	cmds = append(cmds, cmd)
+	// Handle events in the viewport, if we're supposed to
+	if propagateEventToViewport {
+		m.viewport, cmd = m.viewport.Update(msg)
+		cmds = append(cmds, cmd)
+	}
 
 	return m, tea.Batch(cmds...)
 }
