@@ -12,12 +12,16 @@ import (
 	"github.com/charmbracelet/bubbles/v2/textarea"
 	"github.com/charmbracelet/bubbles/v2/viewport"
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/clocklear/texttrove/pkg/models"
-
-	"github.com/tmc/langchaingo/llms/ollama"
+	"github.com/tmc/langchaingo/schema"
 )
+
+// Ragger describes what we expect to be true of a thing that can RAG documents
+type Ragger interface {
+	LoadDocuments(ctx context.Context, basePath, filePattern string) error
+	Query(ctx context.Context, queryText string, nResults int, where, whereDocument map[string]any) ([]schema.Document, error)
+}
 
 type status string
 
@@ -27,35 +31,6 @@ const (
 	StatusQuerying     status = "Querying"
 	StatusRetrieving   status = "Retrieving"
 )
-
-type Config struct {
-	AppName          string
-	ChatInputHeight  int
-	Keys             KeyMap
-	SenderColor      uint
-	LLMColor         uint
-	ErrorColor       uint
-	SpinnerColor     uint
-	LLM              *ollama.LLM
-	MarkdownRenderer *glamour.TermRenderer
-}
-
-func DefaultConfig() (Config, error) {
-	g, err := glamour.NewTermRenderer(glamour.WithAutoStyle())
-	if err != nil {
-		return Config{}, err
-	}
-	return Config{
-		AppName:          "TextTrove",
-		ChatInputHeight:  5,
-		SenderColor:      5,  // ANSI Magenta
-		LLMColor:         4,  // ANSI Blue
-		ErrorColor:       1,  // ANSI Red
-		SpinnerColor:     69, // ANSI Light Blue
-		Keys:             DefaultKeyMap(),
-		MarkdownRenderer: g,
-	}, nil
-}
 
 var (
 	titleStyle = func() lipgloss.Style {
@@ -190,6 +165,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
+			// If the chat is empty, query the DB for relevant documents
+			// and add it to the chat context
+			ctxs, err := m.cfg.RAG.Query(context.Background(), v, 5, nil, nil) // TODO: Use 'where'?
+			if err != nil {
+				chat.SetError(err)
+			} else {
+				err = chat.SetContexts(ctxs)
+				if err != nil {
+					chat.SetError(err)
+				}
+			}
+
 			// Append the user message to the ongoing chat
 			chat.AppendUserMessage(m.textarea.Value())
 			m.viewport.SetContent(m.chatRenderer.Render(chat))
@@ -198,7 +185,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Send the message to the LLM
 			return m, tea.Batch(
-				submitChat(context.Background(), m.cfg.LLM, chat.Log(), m.llmStream),
+				submitChat(context.Background(), m.cfg.ConversationLLM, chat.Log(), m.llmStream),
 				m.spinner.Tick,
 			)
 		case key.Matches(msg, m.cfg.Keys.NewChat):

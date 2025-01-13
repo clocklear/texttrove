@@ -41,10 +41,12 @@ func (r *chatRenderer) renderMessageContent(m *llms.MessageContent) (string, err
 	switch m.Role {
 	case llms.ChatMessageTypeHuman:
 		outputBuf.WriteString(r.senderStyle.Render("You: "))
-	case llms.ChatMessageTypeSystem:
-		outputBuf.WriteString(r.llmStyle.Render("System: "))
 	case llms.ChatMessageTypeAI:
 		outputBuf.WriteString(r.llmStyle.Render("AI: "))
+	case llms.ChatMessageTypeSystem:
+		// System messages will be reserved for passing the prompt to the system.
+		// We don't want to render these.
+		return "", nil
 	default:
 		outputBuf.WriteString(r.llmStyle.Render("Bot: "))
 	}
