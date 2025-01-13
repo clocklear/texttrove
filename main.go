@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/clocklear/texttrove/app"
@@ -27,6 +28,9 @@ type config struct {
 	Document struct {
 		Path        string `required:"true"`
 		FilePattern string `default:"*.md"`
+	}
+	Behavior struct {
+		ShowPrompt bool `default:"false" split_words:"true"`
 	}
 }
 
@@ -53,6 +57,7 @@ func main() {
 	}
 
 	// Load the DB
+	log.Println("Loading DB, this may take a bit on the first run...")
 	err = r.LoadDocuments(context.TODO(), cliCfg.Document.Path, cliCfg.Document.FilePattern)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load documents: %v\n", err)
@@ -67,6 +72,7 @@ func main() {
 	}
 	appCfg.ConversationLLM = conversationLlm
 	appCfg.RAG = r
+	appCfg.ShowPromptInChat = cliCfg.Behavior.ShowPrompt
 	appModel := app.New(appCfg)
 
 	p := tea.NewProgram(appModel, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithKeyboardEnhancements())

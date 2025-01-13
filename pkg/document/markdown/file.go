@@ -5,8 +5,6 @@ import (
 	"context"
 	"os"
 	"path"
-	"path/filepath"
-	"strings"
 
 	"github.com/adrg/frontmatter"
 	"github.com/tmc/langchaingo/schema"
@@ -29,27 +27,27 @@ func Load(ctx context.Context, basePath, relPath string) ([]schema.Document, err
 	}
 
 	// Add relative path elements as metadata for context; split on path separators
-	matter["doc_path"] = splitPathComponents(relPath)
+	matter["doc_path"] = relPath
 
 	// Parse (split) the markdown file into a slice of schema.Document.
 	splitter := textsplitter.NewMarkdownTextSplitter(textsplitter.WithChunkSize(300), textsplitter.WithChunkOverlap(32), textsplitter.WithHeadingHierarchy(true))
 	return textsplitter.CreateDocuments(splitter, []string{string(rest)}, []map[string]any{matter})
 }
 
-func splitPathComponents(path string) []string {
-	var components []string
-	for {
-		dir, file := filepath.Split(path)
-		if file != "" {
-			components = append([]string{file}, components...)
-		}
-		if dir == "" || dir == "/" {
-			if dir == "/" {
-				components = append([]string{"/"}, components...)
-			}
-			break
-		}
-		path = strings.TrimSuffix(dir, "/")
-	}
-	return components
-}
+// func splitPathComponents(path string) []string {
+// 	var components []string
+// 	for {
+// 		dir, file := filepath.Split(path)
+// 		if file != "" {
+// 			components = append([]string{file}, components...)
+// 		}
+// 		if dir == "" || dir == "/" {
+// 			if dir == "/" {
+// 				components = append([]string{"/"}, components...)
+// 			}
+// 			break
+// 		}
+// 		path = strings.TrimSuffix(dir, "/")
+// 	}
+// 	return components
+// }

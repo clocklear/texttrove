@@ -9,16 +9,17 @@ import (
 	"github.com/tmc/langchaingo/schema"
 )
 
-// from the knowledge base.  You should prefer using the knowledge in the knowledge base to answer your questions, but you can defer back to your general knowledge if the knowledge base lacks enough context
 var systemPromptTpl = template.Must(template.New("system_prompt").Parse(`
 You are a helpful assistant with access to a knowledge base, tasked with answering questions from the user.
 
-Answer the question in a very concise manner. Use an unbiased and journalistic tone. Do not repeat text. Don't make anything up. If you are not sure about something, just say that you don't know.
-{{- /* Stop here if no context is provided. The rest below is for handling contexts. */ -}}
-{{- if . -}}
-Answer the question solely based on the provided search results from the knowledge base. If the search results from the knowledge base are not relevant to the question at hand, just say that you don't know. Don't make anything up.
+Use an unbiased and journalistic tone. Do not repeat text. Don't make anything up. If you are not sure about something, just say that you don't know.
+`))
 
-Anything between the following 'context' XML blocks is retrieved from the knowledge base, not part of the conversation with the user. The bullet points are ordered by relevance, so the first one is the most relevant.
+var contextTpl = template.Must(template.New("context").Parse(`
+{{- if . -}}
+Try to answer the question based on the provided search results from the knowledge base. If the search results from the knowledge base are not relevant to the question at hand, ask the user if they would like to fallback to your training data. Don't make anything up.
+
+Anything in the following 'context' XML blocks is retrieved from the knowledge base, not part of the conversation with the user. The bullet points are ordered by relevance, so the first one is the most relevant.  Each item is postfixed with a file location, where possible, so you can use that to cite your sources.
 
 <context>
     {{- if . -}}
@@ -28,7 +29,9 @@ Anything between the following 'context' XML blocks is retrieved from the knowle
 </context>
 {{- end -}}
 
-Don't mention the knowledge base, context or search results in your answer.
+When answering a question, site your sources. If you are unsure about the source, just say that you don't know.
+
+Whenever you reference the knowledge base or the provided context, you should always refer to it as "your notes".
 `))
 
 type Chat struct {
@@ -42,8 +45,10 @@ type Chat struct {
 
 func NewChat() Chat {
 	return Chat{
-		completedMessages: []llms.MessageContent{},
-		streamingParts:    make([]string, 0),
+		completedMessages: []llms.MessageContent{
+			llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt()),
+		},
+		streamingParts: make([]string, 0),
 	}
 }
 
@@ -52,7 +57,9 @@ func (c *Chat) Reset() {
 	defer c.mu.Unlock()
 	c.isStreaming = false
 	c.err = nil
-	c.completedMessages = []llms.MessageContent{}
+	c.completedMessages = []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt()),
+	}
 	c.streamingParts = make([]string, 0)
 }
 
@@ -124,22 +131,22 @@ func (c *Chat) IsEmpty() bool {
 	return len(c.completedMessages) == 0
 }
 
-func (c *Chat) SetContexts(contexts []schema.Document) error {
+func (c *Chat) AddContexts(contexts []schema.Document) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	// Extract slice of content from the documents
 	content := make([]string, 0, len(contexts))
 	for _, doc := range contexts {
-		content = append(content, doc.PageContent)
+		var locationContext string
+		path := doc.Metadata["doc_path"].(string)
+		if path != "" {
+			locationContext = " (from document " + path + ")"
+		}
+		content = append(content, doc.PageContent+locationContext)
 	}
 
-	sb := &strings.Builder{}
-	err := systemPromptTpl.Execute(sb, content)
-	if err != nil {
-		return err
-	}
-	c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeSystem, sb.String()))
+	c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeSystem, contextPrompt(content)))
 	return nil
 }
 
@@ -147,4 +154,22 @@ func (c *Chat) streamingPartsToContent() llms.MessageContent {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return llms.TextParts(llms.ChatMessageTypeAI, strings.Join(c.streamingParts, ""))
+}
+
+func systemPrompt() string {
+	sb := &strings.Builder{}
+	err := systemPromptTpl.Execute(sb, nil)
+	if err != nil {
+		return ""
+	}
+	return sb.String()
+}
+
+func contextPrompt(contexts []string) string {
+	sb := &strings.Builder{}
+	err := contextTpl.Execute(sb, contexts)
+	if err != nil {
+		return ""
+	}
+	return sb.String()
 }

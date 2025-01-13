@@ -16,6 +16,7 @@ type Config struct {
 	ConversationLLM  *ollama.LLM
 	RAG              Ragger
 	MarkdownRenderer *glamour.TermRenderer
+	ShowPromptInChat bool
 }
 
 func DefaultConfig() (Config, error) {

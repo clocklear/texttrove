@@ -16,6 +16,7 @@ type chatRenderer struct {
 	llmStyle         lipgloss.Style
 	errorStyle       lipgloss.Style
 	markdownRenderer *glamour.TermRenderer
+	showPrompt       bool
 }
 
 func (r *chatRenderer) Render(c *models.Chat) string {
@@ -44,9 +45,13 @@ func (r *chatRenderer) renderMessageContent(m *llms.MessageContent) (string, err
 	case llms.ChatMessageTypeAI:
 		outputBuf.WriteString(r.llmStyle.Render("AI: "))
 	case llms.ChatMessageTypeSystem:
-		// System messages will be reserved for passing the prompt to the system.
-		// We don't want to render these.
-		return "", nil
+		if r.showPrompt {
+			outputBuf.WriteString(r.llmStyle.Render("System: "))
+		} else {
+			// System messages will be reserved for passing the prompt to the system.
+			// We don't want to render these.
+			return "", nil
+		}
 	default:
 		outputBuf.WriteString(r.llmStyle.Render("Bot: "))
 	}

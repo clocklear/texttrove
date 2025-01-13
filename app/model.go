@@ -89,6 +89,7 @@ func New(cfg Config) Model {
 			llmStyle:         lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.LLMColor)),
 			errorStyle:       lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.ErrorColor)),
 			markdownRenderer: cfg.MarkdownRenderer,
+			showPrompt:       cfg.ShowPromptInChat,
 		},
 		status: StatusInitializing,
 	}
@@ -165,13 +166,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// If the chat is empty, query the DB for relevant documents
-			// and add it to the chat context
+			// Try to find supporting information for the user's query
+			// and add that to conversation as additional context
 			ctxs, err := m.cfg.RAG.Query(context.Background(), v, 5, nil, nil) // TODO: Use 'where'?
 			if err != nil {
 				chat.SetError(err)
 			} else {
-				err = chat.SetContexts(ctxs)
+				err = chat.AddContexts(ctxs)
 				if err != nil {
 					chat.SetError(err)
 				}

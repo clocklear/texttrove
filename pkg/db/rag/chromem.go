@@ -66,20 +66,41 @@ func (r *ChromemRag) LoadDocuments(ctx context.Context, basePath, filePattern st
 		relPath := match[len(basePath):]
 		doc, err := markdown.Load(ctx, basePath, relPath)
 		if err != nil {
-			log.Println(fmt.Sprintf("Failed to load document %s: %v", match, err))
+			// log.Printf("Failed to load document %s: %v\n", match, err)
 			continue
 		}
-		log.Println(fmt.Sprintf("loading: %s", match))
 
 		// Convert the schema.document(s) into chromem.document(s)
+		bLoaded := false
 		for _, d := range doc {
+			docId := sha256Hash(d.PageContent)
+			// Is thing already in the DB?
+			exists, err := r.docExistsInDB(ctx, docId)
+			if err != nil {
+				log.Printf("Failed to check if document %s exists in DB: %v\n", docId, err)
+				continue
+			}
+			if exists {
+				// log.Printf("Document %s already exists in DB, skipping...\n", docId)
+				continue
+			}
+			if !bLoaded {
+				log.Printf("loading: %s\n", match)
+				bLoaded = true
+			}
+
 			md := stringifyMetadata(d.Metadata)
 			docs = append(docs, chromem.Document{
 				Content:  r.prompts.EmbeddingPrefix + d.PageContent,
 				Metadata: md,
-				ID:       sha256Hash(d.PageContent), // TODO: Figure out how to do ID in such a way that we can smartly update documents
+				ID:       docId, // TODO: Figure out how to do ID in such a way that we can smartly update documents
 			})
 		}
+	}
+
+	if len(docs) == 0 {
+		// nothing to do
+		return nil
 	}
 
 	// Add the raw collection to the DB
@@ -114,6 +135,11 @@ func (r *ChromemRag) Query(ctx context.Context, queryText string, nResults int, 
 	}
 
 	return docs, nil
+}
+
+func (r *ChromemRag) docExistsInDB(ctx context.Context, id string) (bool, error) {
+	_, err := r.col.GetByID(ctx, id)
+	return err == nil, nil
 }
 
 func stringifyMetadata(m map[string]any) map[string]string {
