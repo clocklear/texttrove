@@ -8,29 +8,23 @@ import (
 	"github.com/tmc/langchaingo/llms/ollama"
 )
 
-type responseMsg struct {
+type LLMStreamingResponseMsg struct {
 	chunk      string
 	isComplete bool
 	err        error
 }
 
-func submitChat(ctx context.Context, llm *ollama.LLM, chatContext []llms.MessageContent, sub chan responseMsg) tea.Cmd {
+func submitChat(ctx context.Context, llm *ollama.LLM, chatContext []llms.MessageContent, sub chan tea.Msg) tea.Cmd {
 	return func() tea.Msg {
 		_, err := llm.GenerateContent(ctx, chatContext, llms.WithStreamingFunc(func(ctx context.Context, chunk []byte) error {
-			sub <- responseMsg{chunk: string(chunk)}
+			sub <- LLMStreamingResponseMsg{chunk: string(chunk)}
 			return nil
 		}))
 		if err != nil {
-			sub <- responseMsg{err: err}
+			sub <- LLMStreamingResponseMsg{err: err}
 		} else {
-			sub <- responseMsg{isComplete: true}
+			sub <- LLMStreamingResponseMsg{isComplete: true}
 		}
 		return nil
-	}
-}
-
-func waitForActivity(sub chan responseMsg) tea.Cmd {
-	return func() tea.Msg {
-		return <-sub
 	}
 }

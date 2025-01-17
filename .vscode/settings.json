@@ -4,6 +4,8 @@
         "frontmatter",
         "fsnotify",
         "lipgloss",
+        "llms",
+        "mxbai",
         "Ollama",
         "Ragger",
         "textsplitter",

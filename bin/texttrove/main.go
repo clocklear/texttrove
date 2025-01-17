@@ -41,6 +41,9 @@ type config struct {
 	Behavior struct {
 		ShowPrompt bool `default:"false" split_words:"true"`
 	}
+	Logger struct {
+		HistorySize uint `default:"100"`
+	}
 }
 
 func main() {
@@ -83,7 +86,11 @@ func main() {
 	appCfg.ConversationLLM = conversationLlm
 	appCfg.RAG = r
 	appCfg.ShowPromptInChat = cliCfg.Behavior.ShowPrompt
+	appCfg.LoggerHistorySize = cliCfg.Logger.HistorySize
 	appModel := app.New(appCfg)
+
+	// Swap the RAG logger with one that can hook into the TUI
+	r.SetLogger(appModel.Log)
 
 	p := tea.NewProgram(appModel, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithKeyboardEnhancements())
 	if _, err := p.Run(); err != nil {

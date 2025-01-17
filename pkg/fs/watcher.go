@@ -1,8 +1,6 @@
 package fs
 
 import (
-	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,23 +9,25 @@ import (
 )
 
 type Watcher struct {
-	watcher *fsnotify.Watcher
-	handler func(fsnotify.Event)
-	done    chan struct{}
-	wg      sync.WaitGroup
+	watcher    *fsnotify.Watcher
+	handler    func(fsnotify.Event)
+	done       chan struct{}
+	wg         sync.WaitGroup
+	loggerFunc func(string)
 }
 
 // NewWatcher creates a new Watcher instance
-func NewWatcher(handler func(fsnotify.Event)) (*Watcher, error) {
+func NewWatcher(handler func(fsnotify.Event), loggerFunc func(string)) (*Watcher, error) {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
 	}
 
 	watcher := &Watcher{
-		watcher: w,
-		handler: handler,
-		done:    make(chan struct{}),
+		watcher:    w,
+		handler:    handler,
+		done:       make(chan struct{}),
+		loggerFunc: loggerFunc,
 	}
 
 	watcher.wg.Add(1)
@@ -47,7 +47,6 @@ func (w *Watcher) AddFolder(folder string) error {
 			if err != nil {
 				return err
 			}
-			fmt.Println("Watching:", path)
 		}
 		return nil
 	})
@@ -79,7 +78,9 @@ func (w *Watcher) start() {
 			if !ok {
 				return
 			}
-			log.Println("error:", err)
+			if w.loggerFunc != nil {
+				w.loggerFunc("err: " + err.Error())
+			}
 		case <-w.done:
 			return
 		}
