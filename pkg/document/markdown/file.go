@@ -33,21 +33,3 @@ func Load(ctx context.Context, basePath, relPath string) ([]schema.Document, err
 	splitter := textsplitter.NewMarkdownTextSplitter(textsplitter.WithChunkSize(300), textsplitter.WithChunkOverlap(32), textsplitter.WithHeadingHierarchy(true))
 	return textsplitter.CreateDocuments(splitter, []string{string(rest)}, []map[string]any{matter})
 }
-
-// func splitPathComponents(path string) []string {
-// 	var components []string
-// 	for {
-// 		dir, file := filepath.Split(path)
-// 		if file != "" {
-// 			components = append([]string{file}, components...)
-// 		}
-// 		if dir == "" || dir == "/" {
-// 			if dir == "/" {
-// 				components = append([]string{"/"}, components...)
-// 			}
-// 			break
-// 		}
-// 		path = strings.TrimSuffix(dir, "/")
-// 	}
-// 	return components
-// }

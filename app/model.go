@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/clocklear/texttrove/pkg/models"
+
 	"github.com/charmbracelet/bubbles/v2/cursor"
 	"github.com/charmbracelet/bubbles/v2/help"
 	"github.com/charmbracelet/bubbles/v2/key"
@@ -13,7 +15,6 @@ import (
 	"github.com/charmbracelet/bubbles/v2/viewport"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
-	"github.com/clocklear/texttrove/pkg/models"
 	"github.com/tmc/langchaingo/schema"
 )
 
@@ -48,16 +49,17 @@ var (
 )
 
 type Model struct {
-	ready        bool
-	help         help.Model
-	llmStream    chan responseMsg
-	viewport     viewport.Model
-	chats        []models.Chat
-	selectedChat uint // future use
-	textarea     textarea.Model
-	spinner      spinner.Model
-	chatRenderer chatRenderer
-	status       status
+	ready          bool
+	help           help.Model
+	dispatchStream chan tea.Msg
+	viewport       viewport.Model
+	chats          []models.Chat
+	selectedChat   uint // future use
+	textarea       textarea.Model
+	spinner        spinner.Model
+	chatRenderer   chatRenderer
+	status         status
+	logger         Logger
 
 	cfg Config
 }
@@ -73,18 +75,21 @@ func New(cfg Config) Model {
 	ta.Styles.Focused.CursorLine = lipgloss.NewStyle() // Remove cursor line styling
 	ta.ShowLineNumbers = false                         // Hide line numbers
 
+	// Create a logger pane
+	l := NewLogger(3, cfg.LoggerHistorySize, lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.LogColor)))
+
 	// Create a spinner for showing that the app is loading
 	spn := spinner.New()
 	spn.Style = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.SpinnerColor))
 	spn.Spinner = spinner.Points
 
 	return Model{
-		cfg:       cfg,
-		textarea:  ta,
-		help:      help.New(),
-		spinner:   spn,
-		llmStream: make(chan responseMsg),
-		chats:     []models.Chat{models.NewChat()},
+		cfg:            cfg,
+		textarea:       ta,
+		help:           help.New(),
+		spinner:        spn,
+		dispatchStream: make(chan tea.Msg),
+		chats:          []models.Chat{models.NewChat()},
 		chatRenderer: chatRenderer{
 			senderStyle:      lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.SenderColor)),
 			llmStyle:         lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.LLMColor)),
@@ -93,6 +98,7 @@ func New(cfg Config) Model {
 			showPrompt:       cfg.ShowPromptInChat,
 		},
 		status: StatusInitializing,
+		logger: l,
 	}
 }
 
@@ -104,11 +110,22 @@ func (m *Model) setStatus(s status) {
 	m.status = s
 }
 
+func waitForActivity(sub chan tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		return <-sub
+	}
+}
+
 func (m Model) Init() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(
 		textarea.Blink,
-		waitForActivity(m.llmStream),
+		waitForActivity(m.dispatchStream),
 	)
+}
+
+func (m Model) Log(msg string) {
+
+	m.dispatchStream <- LogMsg(msg)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -128,7 +145,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		headerHeight := lipgloss.Height(m.headerView())
 		footerHeight := lipgloss.Height(m.footerView())
 		helpHeight := lipgloss.Height(m.helpView())
-		verticalMarginHeight := headerHeight + footerHeight + m.cfg.ChatInputHeight + helpHeight
+		loggerHeight := lipgloss.Height(m.logger.View())
+		verticalMarginHeight := headerHeight + footerHeight + m.cfg.ChatInputHeight + helpHeight + loggerHeight
 
 		if !m.ready {
 			// Since this program is using the full size of the viewport we
@@ -146,6 +164,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textarea.SetWidth(msg.Width)
 			m.viewport.SetHeight(msg.Height - verticalMarginHeight)
 		}
+		// The log viewport needs to be made aware of this as well
+		m.logger, cmd = m.logger.Update(msg)
+		cmds = append(cmds, cmd)
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.cfg.Keys.Quit):
@@ -187,7 +208,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Send the message to the LLM
 			return m, tea.Batch(
-				submitChat(context.Background(), m.cfg.ConversationLLM, chat.Log(), m.llmStream),
+				submitChat(context.Background(), m.cfg.ConversationLLM, chat.Log(), m.dispatchStream),
 				m.spinner.Tick,
 			)
 		case key.Matches(msg, m.cfg.Keys.NewChat):
@@ -221,7 +242,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea, cmd = m.textarea.Update(msg)
 		cmds = append(cmds, cmd)
 
-	case responseMsg:
+	case LLMStreamingResponseMsg:
 		// Handle incoming messages
 		if msg.err != nil {
 			chat.SetError(msg.err)
@@ -238,7 +259,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(m.chatRenderer.Render(chat))
 		m.viewport.GotoBottom()
 		// Await the next message
-		cmds = append(cmds, waitForActivity(m.llmStream))
+		cmds = append(cmds, waitForActivity(m.dispatchStream))
+
+	case LogMsg:
+		// Invoke the logger with this message
+		m.logger, cmd = m.logger.Update(msg)
+		// Await the next message
+		cmds = append(cmds, waitForActivity(m.dispatchStream), cmd)
+		// Can bail here
+		return m, tea.Batch(cmds...)
 	}
 
 	// Handle events in the viewport, if we're supposed to
@@ -256,11 +285,12 @@ func (m Model) View() string {
 	}
 
 	return fmt.Sprintf(
-		"%s\n%s\n\n%s\n%s\n%s",
+		"%s\n%s\n\n%s\n%s\n%s\n%s",
 		m.headerView(),
 		m.viewport.View(),
 		m.footerView(),
 		m.textarea.View(),
+		m.logger.View(),
 		m.helpView(),
 	)
 }
