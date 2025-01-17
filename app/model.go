@@ -21,6 +21,7 @@ import (
 type Ragger interface {
 	LoadDocuments(ctx context.Context, basePath, filePattern string) error
 	Query(ctx context.Context, queryText string, nResults int, where, whereDocument map[string]any) ([]schema.Document, error)
+	Shutdown(ctx context.Context) error
 }
 
 type status string

@@ -19,7 +19,11 @@ var contextTpl = template.Must(template.New("context").Parse(`
 {{- if . -}}
 Try to answer the question based on the provided search results from the knowledge base. If the search results from the knowledge base are not relevant to the question at hand, ask the user if they would like to fallback to your training data. Don't make anything up.
 
-Anything in the following 'context' XML blocks is retrieved from the knowledge base, not part of the conversation with the user. The bullet points are ordered by relevance, so the first one is the most relevant.  Each item is postfixed with a file location, where possible, so you can use that to cite your sources.
+Anything in the following 'context' XML blocks is retrieved from the knowledge base, not part of the conversation with the user. The bullet points are ordered by relevance, so the first one is the most relevant.
+
+Each item is postfixed with a metadata footer, where possible, so you can use that to cite your sources.  The 'Source' metadata field
+represents the location within the knowledge base.  The folder segments are separated by slashes and the folder names and file name are
+useful context as well.
 
 <context>
     {{- if . -}}
@@ -138,12 +142,7 @@ func (c *Chat) AddContexts(contexts []schema.Document) error {
 	// Extract slice of content from the documents
 	content := make([]string, 0, len(contexts))
 	for _, doc := range contexts {
-		var locationContext string
-		path := doc.Metadata["doc_path"].(string)
-		if path != "" {
-			locationContext = " (from document " + path + ")"
-		}
-		content = append(content, doc.PageContent+locationContext)
+		content = append(content, doc.PageContent)
 	}
 
 	c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeSystem, contextPrompt(content)))

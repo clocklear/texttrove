@@ -11,9 +11,9 @@ import (
 	"log"
 	"os"
 
+	"github.com/clocklear/chromem-go"
 	"github.com/clocklear/texttrove/app"
 	"github.com/clocklear/texttrove/pkg/db/rag"
-	"github.com/philippgille/chromem-go"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/kelseyhightower/envconfig"
@@ -22,12 +22,21 @@ import (
 
 type config struct {
 	Model struct {
-		Conversation string `default:"llama3.2-128k:latest"`
-		Embedding    string `default:"mxbai-embed-large:latest"`
+		Conversation string `default:"llama3.2:latest"`
+		Embedding    struct {
+			Name         string `default:"mxbai-embed-large:latest"`
+			PromptPrefix struct {
+				Query     string `default:"Represent this sentence for searching relevant passages: "`
+				Embedding string
+			}
+		}
 	}
 	Document struct {
 		Path        string `required:"true"`
 		FilePattern string `default:"*.md"`
+	}
+	Database struct {
+		Path string `default:"texttrove.db"`
 	}
 	Behavior struct {
 		ShowPrompt bool `default:"false" split_words:"true"`
@@ -48,9 +57,10 @@ func main() {
 	}
 
 	// Build doc DB
-	r, err := rag.NewChromemRag("texttrove.db", rag.ModelPrompts{
-		QueryPrefix: "Represent this sentence for searching relevant passages: ", // TODO: specific to our embedding model, parameterize
-	}, chromem.NewEmbeddingFuncOllama(cliCfg.Model.Embedding, ""))
+	r, err := rag.NewChromemRag(cliCfg.Database.Path, rag.ModelPrompts{
+		QueryPrefix:     cliCfg.Model.Embedding.PromptPrefix.Query,
+		EmbeddingPrefix: cliCfg.Model.Embedding.PromptPrefix.Embedding,
+	}, chromem.NewEmbeddingFuncOllama(cliCfg.Model.Embedding.Name, ""))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create rag: %v\n", err)
 		os.Exit(1)

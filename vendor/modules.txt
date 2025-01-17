@@ -67,10 +67,17 @@ github.com/charmbracelet/x/wcwidth
 # github.com/charmbracelet/x/windows v0.2.0
 ## explicit; go 1.18
 github.com/charmbracelet/x/windows
+# github.com/clocklear/chromem-go v0.7.1-pre.0
+## explicit; go 1.21
+github.com/clocklear/chromem-go
 # github.com/dlclark/regexp2 v1.11.0
 ## explicit; go 1.13
 github.com/dlclark/regexp2
 github.com/dlclark/regexp2/syntax
+# github.com/fsnotify/fsnotify v1.8.0
+## explicit; go 1.17
+github.com/fsnotify/fsnotify
+github.com/fsnotify/fsnotify/internal
 # github.com/google/uuid v1.6.0
 ## explicit
 github.com/google/uuid
@@ -105,9 +112,6 @@ github.com/muesli/reflow/wordwrap
 # github.com/muesli/termenv v0.15.3-0.20240618155329-98d742f6907a
 ## explicit; go 1.17
 github.com/muesli/termenv
-# github.com/philippgille/chromem-go v0.7.0
-## explicit; go 1.21
-github.com/philippgille/chromem-go
 # github.com/pkoukk/tiktoken-go v0.1.6
 ## explicit; go 1.19
 github.com/pkoukk/tiktoken-go
@@ -163,7 +167,7 @@ golang.org/x/net/html/atom
 # golang.org/x/sync v0.9.0
 ## explicit; go 1.18
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.27.0
+# golang.org/x/sys v0.29.0
 ## explicit; go 1.18
 golang.org/x/sys/plan9
 golang.org/x/sys/unix

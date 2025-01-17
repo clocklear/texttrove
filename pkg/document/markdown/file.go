@@ -26,8 +26,8 @@ func Load(ctx context.Context, basePath, relPath string) ([]schema.Document, err
 		return nil, err
 	}
 
-	// Add relative path elements as metadata for context; split on path separators
-	matter["doc_path"] = relPath
+	// Add relative path elements as metadata for context
+	matter["Source"] = relPath
 
 	// Parse (split) the markdown file into a slice of schema.Document.
 	splitter := textsplitter.NewMarkdownTextSplitter(textsplitter.WithChunkSize(300), textsplitter.WithChunkOverlap(32), textsplitter.WithHeadingHierarchy(true))

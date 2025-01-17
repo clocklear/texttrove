@@ -8,8 +8,9 @@ require (
 	github.com/charmbracelet/bubbletea/v2 v2.0.0-alpha.2
 	github.com/charmbracelet/glamour v0.8.0
 	github.com/charmbracelet/lipgloss/v2 v2.0.0-alpha.2
+	github.com/clocklear/chromem-go v0.7.1-pre.0
+	github.com/fsnotify/fsnotify v1.8.0
 	github.com/kelseyhightower/envconfig v1.4.0
-	github.com/philippgille/chromem-go v0.7.0
 	github.com/tmc/langchaingo v0.1.12
 )
 
@@ -48,7 +49,7 @@ require (
 	gitlab.com/golang-commonmark/puny v0.0.0-20191124015043-9f83538fa04f // indirect
 	golang.org/x/net v0.27.0 // indirect
 	golang.org/x/sync v0.9.0 // indirect
-	golang.org/x/sys v0.27.0 // indirect
+	golang.org/x/sys v0.29.0 // indirect
 	golang.org/x/term v0.22.0 // indirect
 	golang.org/x/text v0.19.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
