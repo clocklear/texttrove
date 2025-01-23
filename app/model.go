@@ -53,7 +53,7 @@ type Model struct {
 	help           help.Model
 	dispatchStream chan tea.Msg
 	viewport       viewport.Model
-	chats          []models.Chat
+	chats          []*models.Chat
 	selectedChat   uint // future use
 	textarea       textarea.Model
 	spinner        spinner.Model
@@ -64,7 +64,7 @@ type Model struct {
 	cfg Config
 }
 
-func New(cfg Config) Model {
+func New(cfg Config) (Model, error) {
 	// Create textarea for receiving user input
 	ta := textarea.New()
 	ta.Placeholder = "Type your message"
@@ -83,13 +83,21 @@ func New(cfg Config) Model {
 	spn.Style = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.SpinnerColor))
 	spn.Spinner = spinner.Points
 
+	// Create a new chat
+	chat, err := models.NewChat(
+		models.WithSystemPromptTemplateFile(cfg.ChatSystemPromptPath),
+		models.WithContextTemplateFile(cfg.ChatContextPromptPath))
+	if err != nil {
+		return Model{}, err
+	}
+
 	return Model{
 		cfg:            cfg,
 		textarea:       ta,
 		help:           help.New(),
 		spinner:        spn,
 		dispatchStream: make(chan tea.Msg),
-		chats:          []models.Chat{models.NewChat()},
+		chats:          []*models.Chat{chat},
 		chatRenderer: chatRenderer{
 			senderStyle:      lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.SenderColor)),
 			llmStyle:         lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.LLMColor)),
@@ -99,11 +107,11 @@ func New(cfg Config) Model {
 		},
 		status: StatusInitializing,
 		logger: l,
-	}
+	}, nil
 }
 
 func (m Model) activeChat() *models.Chat {
-	return &m.chats[m.selectedChat]
+	return m.chats[m.selectedChat]
 }
 
 func (m *Model) setStatus(s status) {

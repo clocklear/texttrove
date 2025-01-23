@@ -42,7 +42,7 @@ func main() {
 	}
 
 	// Ask the question that the LLM shouldn't be able to answer
-	q := "What is the date 15 days from now?"
+	q := "Find yesterday's date."
 	content := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, "You are a helpful assistant."),
 		llms.TextParts(llms.ChatMessageTypeHuman, q),
@@ -66,16 +66,18 @@ func main() {
 	}
 
 	// Initialize the agent
+	// TODO: Determine why this doesn't work with the oneshotagent and llama3.2
 	agent := agents.NewConversationalAgent(llm,
 		agentTools,
-		agents.WithMaxIterations(3))
+		agents.WithMaxIterations(3),
+	)
 	executor := agents.NewExecutor(agent)
 
 	// run a chain with the executor and defined input
 	fmt.Printf("Asking (with tools): %s\n", q)
 	answer, err := chains.Run(context.Background(), executor, q)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
 	}
 	fmt.Println(answer)
 	// Should yield todays date

@@ -1,22 +1,21 @@
 package models
 
 import (
-	"html/template"
+	"os"
 	"strings"
 	"sync"
 
 	"github.com/tmc/langchaingo/llms"
+	"github.com/tmc/langchaingo/prompts"
 	"github.com/tmc/langchaingo/schema"
 )
 
-var systemPromptTpl = template.Must(template.New("system_prompt").Parse(`
-You are a helpful assistant with access to a knowledge base, tasked with answering questions from the user.
+var baseSystemPromptTpl = `You are a helpful assistant with access to a knowledge base, tasked with answering questions from the user.
 
 Use an unbiased and journalistic tone. Do not repeat text. Don't make anything up. If you are not sure about something, just say that you don't know.
-`))
+`
 
-var contextTpl = template.Must(template.New("context").Parse(`
-{{- if . -}}
+var baseContextTpl = `{{- if .contexts -}}
 Try to answer the question based on the provided search results from the knowledge base. If the search results from the knowledge base are not relevant to the question at hand, ask the user if they would like to fallback to your training data. Don't make anything up.
 
 Anything in the following 'context' XML blocks is retrieved from the knowledge base, not part of the conversation with the user. The bullet points are ordered by relevance, so the first one is the most relevant.
@@ -26,17 +25,15 @@ represents the location within the knowledge base.  The folder segments are sepa
 useful context as well.
 
 <context>
-    {{- if . -}}
-    {{- range $context := .}}
-    - {{.}}{{end}}
-    {{- end}}
+    {{- range $context := .contexts -}}
+    - {{$context}}{{end}}
 </context>
-{{- end -}}
 
-When answering a question, site your sources. If you are unsure about the source, just say that you don't know.
+When answering a question relevant to the above context, site your sources. If you are unsure about the source, say that you don't know.
 
 Whenever you reference the knowledge base or the provided context, you should always refer to it as "your notes".
-`))
+{{- end -}}
+`
 
 type Chat struct {
 	title             string // TODO: Future use; summarize the conversation
@@ -45,15 +42,76 @@ type Chat struct {
 	isStreaming       bool
 	err               error
 	mu                sync.RWMutex
+
+	systemPromptTpl prompts.PromptTemplate
+	contextTpl      prompts.PromptTemplate
 }
 
-func NewChat() Chat {
-	return Chat{
-		completedMessages: []llms.MessageContent{
-			llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt()),
-		},
-		streamingParts: make([]string, 0),
+type ChatOption func(*Chat) error
+
+func NewChat(opts ...ChatOption) (*Chat, error) {
+	// init new chat
+	c := Chat{
+		completedMessages: make([]llms.MessageContent, 0),
+		streamingParts:    make([]string, 0),
+		systemPromptTpl:   prompts.NewPromptTemplate(baseSystemPromptTpl, nil),
+		contextTpl:        prompts.NewPromptTemplate(baseContextTpl, nil),
 	}
+
+	// apply opts
+	for _, opt := range opts {
+		err := opt(&c)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// render system prompt
+	err := c.pushSystemPrompt()
+
+	return &c, err
+}
+
+func WithSystemPromptTemplateFile(path string) ChatOption {
+	return func(c *Chat) error {
+		// If the file doesn't exist, bail
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return nil
+		}
+		// Read the file
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		c.systemPromptTpl = prompts.NewPromptTemplate(string(b), nil)
+		return nil
+	}
+}
+
+func WithContextTemplateFile(path string) ChatOption {
+	return func(c *Chat) error {
+		// If the file doesn't exist, bail
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return nil
+		}
+		// Read the file
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		c.contextTpl = prompts.NewPromptTemplate(string(b), nil)
+		return nil
+	}
+}
+
+func (c *Chat) pushSystemPrompt() error {
+	// render the system prompt
+	p, err := c.systemPromptTpl.Format(nil)
+	if err != nil {
+		return err
+	}
+	c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeSystem, p))
+	return nil
 }
 
 func (c *Chat) Reset() {
@@ -61,10 +119,9 @@ func (c *Chat) Reset() {
 	defer c.mu.Unlock()
 	c.isStreaming = false
 	c.err = nil
-	c.completedMessages = []llms.MessageContent{
-		llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt()),
-	}
+	c.completedMessages = make([]llms.MessageContent, 0)
 	c.streamingParts = make([]string, 0)
+	c.pushSystemPrompt()
 }
 
 func (c *Chat) Error() error {
@@ -145,7 +202,12 @@ func (c *Chat) AddContexts(contexts []schema.Document) error {
 		content = append(content, doc.PageContent)
 	}
 
-	c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeSystem, contextPrompt(content)))
+	// Render the context template
+	t, err := c.contextTpl.Format(map[string]interface{}{"contexts": content})
+	if err != nil {
+		return err
+	}
+	c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeSystem, t))
 	return nil
 }
 
@@ -153,22 +215,4 @@ func (c *Chat) streamingPartsToContent() llms.MessageContent {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return llms.TextParts(llms.ChatMessageTypeAI, strings.Join(c.streamingParts, ""))
-}
-
-func systemPrompt() string {
-	sb := &strings.Builder{}
-	err := systemPromptTpl.Execute(sb, nil)
-	if err != nil {
-		return ""
-	}
-	return sb.String()
-}
-
-func contextPrompt(contexts []string) string {
-	sb := &strings.Builder{}
-	err := contextTpl.Execute(sb, contexts)
-	if err != nil {
-		return ""
-	}
-	return sb.String()
 }

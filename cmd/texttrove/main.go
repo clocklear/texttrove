@@ -31,7 +31,9 @@ type config struct {
 			}
 		}
 	}
-	Document struct {
+	SystemPromptPath  string `default:"./prompts/system.tpl"`
+	ContextPromptPath string `default:"./prompts/context.tpl"`
+	Document          struct {
 		Path        string `required:"true"`
 		FilePattern string `default:"*.md"`
 	}
@@ -47,7 +49,6 @@ type config struct {
 }
 
 func main() {
-
 	// Load config from environment (using envconfig)
 	var cliCfg config
 	envconfig.MustProcess("", &cliCfg)
@@ -87,7 +88,13 @@ func main() {
 	appCfg.RAG = r
 	appCfg.ShowPromptInChat = cliCfg.Behavior.ShowPrompt
 	appCfg.LoggerHistorySize = cliCfg.Logger.HistorySize
-	appModel := app.New(appCfg)
+	appCfg.ChatSystemPromptPath = cliCfg.SystemPromptPath
+	appCfg.ChatContextPromptPath = cliCfg.ContextPromptPath
+	appModel, err := app.New(appCfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create app model: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Swap the RAG logger with one that can hook into the TUI
 	r.SetLogger(appModel.Log)

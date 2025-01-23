@@ -30,6 +30,21 @@ The app uses `envconfig` for configuration. Users should refer to `main.go` for 
 DOCUMENT_PATH=your/doc/folder go run main.go
 ```
 
+### Customizable Prompts
+
+The app uses templates for system and context prompts. You can customize these by dropping `system.tpl` and `context.tpl` in the `./prompts/` directory relative to the binary.
+
+Refer to [chat.go](./pkg/models/chat.go) for the base templates.
+
+## Features
+
+- Interactive chat with LLM
+- Retrieval of relevant documents based on query
+- Local storage of embeddings
+- Automatic parsing of markdown files
+- Live-updating of document changes (watches for file modifications)
+- Customizable system and context prompts (drop `system.tpl` and `context.tpl` in `./prompts/` relative to binary)
+
 ## Goals
 
 - Enable interactive conversations with local markdown notes
@@ -39,5 +54,5 @@ DOCUMENT_PATH=your/doc/folder go run main.go
 ## Future Enhancements
 
 - Allow configuration of custom ollama endpoints
-- Add activity logging to the Text User Interface (TUI)
-- Support custom prompts for more flexible interactions
+- Tabbed interface for multiple concurrent conversations
+- Copy/paste functionality for chat history

@@ -61,6 +61,9 @@ func (t Tool) Call(ctx context.Context, input string) (string, error) {
 		t.CallbacksHandler.HandleToolStart(ctx, input)
 	}
 
+	// I've seen instances where the data is wrapped in quotes, so going to try to remove them
+	input = removeQuotes(input)
+
 	// Parse the date string
 	refTime := time.Now()
 	d, err := naturaldate.Parse(input, refTime, naturaldate.WithDirection(naturaldate.Future))
@@ -76,4 +79,11 @@ func (t Tool) Call(ctx context.Context, input string) (string, error) {
 		t.CallbacksHandler.HandleToolEnd(ctx, targetDate)
 	}
 	return targetDate, nil
+}
+
+func removeQuotes(s string) string {
+	if len(s) >= 2 && s[0] == '\'' && s[len(s)-1] == '\'' {
+		return s[1 : len(s)-1]
+	}
+	return s
 }

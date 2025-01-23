@@ -19,6 +19,9 @@ type Config struct {
 	MarkdownRenderer  *glamour.TermRenderer
 	ShowPromptInChat  bool
 	LoggerHistorySize uint
+
+	ChatSystemPromptPath  string
+	ChatContextPromptPath string
 }
 
 func DefaultConfig() (Config, error) {
