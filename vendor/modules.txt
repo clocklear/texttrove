@@ -198,6 +198,8 @@ github.com/tmc/langchaingo/internal/util
 github.com/tmc/langchaingo/llms
 github.com/tmc/langchaingo/llms/ollama
 github.com/tmc/langchaingo/llms/ollama/internal/ollamaclient
+github.com/tmc/langchaingo/llms/openai
+github.com/tmc/langchaingo/llms/openai/internal/openaiclient
 github.com/tmc/langchaingo/memory
 github.com/tmc/langchaingo/outputparser
 github.com/tmc/langchaingo/prompts

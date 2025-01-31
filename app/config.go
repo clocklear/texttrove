@@ -2,20 +2,27 @@ package app
 
 import (
 	"github.com/charmbracelet/glamour"
-	"github.com/tmc/langchaingo/llms/ollama"
+	"github.com/tmc/langchaingo/agents"
+	"github.com/tmc/langchaingo/llms"
 )
 
 type Config struct {
-	AppName           string
-	ChatInputHeight   int
-	Keys              KeyMap
-	LogColor          uint
-	SenderColor       uint
-	LLMColor          uint
-	ErrorColor        uint
-	SpinnerColor      uint
-	ConversationLLM   *ollama.LLM
-	RAG               Ragger
+	AppName         string
+	ChatInputHeight int
+	Keys            KeyMap
+	LogColor        uint
+	SenderColor     uint
+	LLMColor        uint
+	ErrorColor      uint
+	SpinnerColor    uint
+
+	// These two are used independently when the app is doing it's own RAG
+	ConversationLLM llms.Model
+	RAG             Ragger
+
+	// This is used when the app is relying on the RAG 'tool'
+	Agent *agents.ConversationalAgent
+
 	MarkdownRenderer  *glamour.TermRenderer
 	ShowPromptInChat  bool
 	LoggerHistorySize uint

@@ -56,3 +56,4 @@ Refer to [chat.go](./pkg/models/chat.go) for the base templates.
 - Allow configuration of custom ollama endpoints
 - Tabbed interface for multiple concurrent conversations
 - Copy/paste functionality for chat history
+- Use tools to allow LLM to request further context if required
