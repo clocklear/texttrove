@@ -1,6 +1,8 @@
 package models
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -215,4 +217,79 @@ func (c *Chat) streamingPartsToContent() llms.MessageContent {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return llms.TextParts(llms.ChatMessageTypeAI, strings.Join(c.streamingParts, ""))
+}
+
+// Everything beyond this point implements schema.ChatMessageHistory from langchaingo; this allows for
+// easy adapting to the langchaingo API.
+// AddMessage adds a message to the store.
+func (c *Chat) AddMessage(ctx context.Context, message llms.ChatMessage) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.completedMessages = append(c.completedMessages, llms.TextParts(message.GetType(), message.GetContent()))
+	return nil
+}
+
+// AddUserMessage is a convenience method for adding a human message string
+// to the store.
+func (c *Chat) AddUserMessage(ctx context.Context, message string) error {
+	return c.AddMessage(ctx, llms.HumanChatMessage{Content: message})
+}
+
+// AddAIMessage is a convenience method for adding an AI message string to
+// the store.
+func (c *Chat) AddAIMessage(ctx context.Context, message string) error {
+	return c.AddMessage(ctx, llms.AIChatMessage{Content: message})
+}
+
+// Clear removes all messages from the store.
+func (c *Chat) Clear(ctx context.Context) error {
+	c.Reset()
+	return nil
+}
+
+// Messages retrieves all messages from the store
+func (c *Chat) Messages(ctx context.Context) ([]llms.ChatMessage, error) {
+	var messages []llms.ChatMessage
+	for _, m := range c.Log() {
+
+		// Extract the content as a string
+		sb := strings.Builder{}
+		for _, part := range m.Parts {
+			s, ok := part.(fmt.Stringer)
+			if !ok {
+				continue
+			}
+			sb.WriteString(s.String())
+		}
+		switch m.Role {
+		case llms.ChatMessageTypeAI:
+			messages = append(messages, llms.AIChatMessage{Content: sb.String()})
+		case llms.ChatMessageTypeHuman:
+			messages = append(messages, llms.HumanChatMessage{Content: sb.String()})
+		case llms.ChatMessageTypeSystem:
+			messages = append(messages, llms.SystemChatMessage{Content: sb.String()})
+		}
+	}
+	return messages, nil
+}
+
+// SetMessages replaces existing messages in the store
+func (c *Chat) SetMessages(ctx context.Context, messages []llms.ChatMessage) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.isStreaming = false
+	c.err = nil
+	c.completedMessages = make([]llms.MessageContent, 0)
+	c.streamingParts = make([]string, 0)
+	for _, m := range messages {
+		switch m.GetType() {
+		case llms.ChatMessageTypeAI:
+			c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeAI, m.GetContent()))
+		case llms.ChatMessageTypeHuman:
+			c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeHuman, m.GetContent()))
+		case llms.ChatMessageTypeSystem:
+			c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeSystem, m.GetContent()))
+		}
+	}
+	return nil
 }

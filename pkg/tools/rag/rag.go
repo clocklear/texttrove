@@ -39,7 +39,7 @@ func (t Tool) Name() string {
 
 // Description returns a description for the tool.
 func (t Tool) Description() string {
-	return `Searches a knowledge base for relevant content.  Input should be a question or topic to search for.`
+	return `Searches a knowledge base for relevant content.  Input should be a question or topic to search for.  Response will be a text block of relevant content surrounded by 'context' XML blocks.`
 }
 
 // Call searches a knowledge base for relevant content based on the input question or topic.
