@@ -191,43 +191,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			if m.cfg.ConversationAgent != nil {
-				// TODO: Do I need anything here?
+			// Try to find supporting information for the user's query
+			// and add that to conversation as additional context
+			ctxs, err := m.cfg.RAG.Query(context.Background(), v, 5, nil, nil) // TODO: Use 'where'?
+			if err != nil {
+				// m.Log(err.Error())
+				fmt.Println(err.Error())
+				chat.SetError(err)
 			} else {
-				// Try to find supporting information for the user's query
-				// and add that to conversation as additional context
-				ctxs, err := m.cfg.RAG.Query(context.Background(), v, 5, nil, nil) // TODO: Use 'where'?
+				err = chat.AddContexts(ctxs)
 				if err != nil {
 					// m.Log(err.Error())
 					fmt.Println(err.Error())
 					chat.SetError(err)
-				} else {
-					err = chat.AddContexts(ctxs)
-					if err != nil {
-						// m.Log(err.Error())
-						fmt.Println(err.Error())
-						chat.SetError(err)
-					}
 				}
 			}
+
 			// Append the user message to the ongoing chat
 			chat.AppendUserMessage(m.textarea.Value())
 			m.viewport.SetContent(m.chatRenderer.Render(chat))
 			m.textarea.Reset()
 			m.viewport.GotoBottom()
 
-			if m.cfg.ConversationAgent != nil {
-				return m, tea.Batch(
-					submitChatAgent(context.Background(), m.cfg.ConversationAgent, "", m.dispatchStream),
-					m.spinner.Tick,
-				)
-			} else {
-				// Send the message to the LLM
-				return m, tea.Batch(
-					submitChat(context.Background(), m.cfg.ConversationLLM, chat.Log(), m.dispatchStream),
-					m.spinner.Tick,
-				)
-			}
+			// Send the message to the LLM
+			return m, tea.Batch(
+				submitChat(context.Background(), m.cfg.ConversationLLM, chat.Log(), m.dispatchStream),
+				m.spinner.Tick,
+			)
 		case key.Matches(msg, m.cfg.Keys.NewChat):
 			// Only allow new chats when the current chat is not streaming
 			if !chat.IsStreaming() {

@@ -3,7 +3,6 @@ package app
 import (
 	"github.com/charmbracelet/glamour"
 	"github.com/clocklear/texttrove/pkg/models"
-	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/llms"
 )
 
@@ -22,9 +21,6 @@ type Config struct {
 	// These two are used independently when the app is doing it's own RAG
 	ConversationLLM llms.Model
 	RAG             Ragger
-
-	// This is used when the app is relying on the RAG 'tool'
-	ConversationAgent agents.Agent
 
 	MarkdownRenderer  *glamour.TermRenderer
 	ShowPromptInChat  bool

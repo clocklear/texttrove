@@ -17,23 +17,15 @@ import (
 	"github.com/clocklear/texttrove/app"
 	"github.com/clocklear/texttrove/pkg/db/rag"
 	"github.com/clocklear/texttrove/pkg/models"
-	trag "github.com/clocklear/texttrove/pkg/tools/rag"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/kelseyhightower/envconfig"
-	"github.com/tmc/langchaingo/agents"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/ollama"
 	"github.com/tmc/langchaingo/llms/openai"
-	"github.com/tmc/langchaingo/memory"
-	"github.com/tmc/langchaingo/prompts"
-	"github.com/tmc/langchaingo/tools"
 )
 
 type config struct {
-	Agent struct {
-		MaxIterations int `default:"3"`
-	}
 	Model struct {
 		Conversation struct {
 			Name    string `default:"llama3.2:latest"`
@@ -62,8 +54,6 @@ type config struct {
 	Behavior struct {
 		ShowPrompt         bool `default:"false" split_words:"true"`
 		MaxDocumentResults int  `default:"5"`
-		// AgentMode controls whether the conversational agent with tools is used instead of manual RAG.
-		AgentMode bool `default:"false" split_words:"true"`
 	}
 	Logger struct {
 		HistorySize uint `default:"100"`
@@ -146,33 +136,32 @@ func main() {
 		os.Exit(1)
 	}
 
-	var conversationAgent agents.Agent
-	if cliCfg.Behavior.AgentMode {
-		// Set up conversational chain
-		// TODO: refactor to not duplicate logic in chat.go
-		// TODO: currently works only with explicit prompt files, not embedded default
-		// Read the file
-		b, err := os.ReadFile(cliCfg.ContextPromptPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read context prompt file: %v\n", err)
-			os.Exit(1)
-		}
-		tmpl := prompts.NewPromptTemplate(string(b), nil)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to read context prompt file: %v\n", err)
-			os.Exit(1)
-		}
-		agentTools := []tools.Tool{
-			trag.New(r, cliCfg.Behavior.MaxDocumentResults, tmpl),
-		}
-		conversationBuffer := memory.NewConversationBuffer(memory.WithChatHistory(chat))
-		// llmChain := chains.NewConversation(conversationLlm, conversationBuffer)
-		conversationAgent = agents.NewConversationalAgent(
-			conversationLlm,
-			agentTools,
-			agents.WithMaxIterations(cliCfg.Agent.MaxIterations),
-			agents.WithMemory(conversationBuffer))
-	}
+	// if cliCfg.Behavior.AgentMode {
+	// 	// Set up conversational chain
+	// 	// TODO: refactor to not duplicate logic in chat.go
+	// 	// TODO: currently works only with explicit prompt files, not embedded default
+	// 	// Read the file
+	// 	b, err := os.ReadFile(cliCfg.ContextPromptPath)
+	// 	if err != nil {
+	// 		fmt.Fprintf(os.Stderr, "Failed to read context prompt file: %v\n", err)
+	// 		os.Exit(1)
+	// 	}
+	// 	tmpl := prompts.NewPromptTemplate(string(b), nil)
+	// 	if err != nil {
+	// 		fmt.Fprintf(os.Stderr, "Failed to read context prompt file: %v\n", err)
+	// 		os.Exit(1)
+	// 	}
+	// 	agentTools := []tools.Tool{
+	// 		trag.New(r, cliCfg.Behavior.MaxDocumentResults, tmpl),
+	// 	}
+	// 	conversationBuffer := memory.NewConversationBuffer(memory.WithChatHistory(chat))
+	// 	// llmChain := chains.NewConversation(conversationLlm, conversationBuffer)
+	// 	conversationAgent = agents.NewConversationalAgent(
+	// 		conversationLlm,
+	// 		agentTools,
+	// 		agents.WithMaxIterations(cliCfg.Agent.MaxIterations),
+	// 		agents.WithMemory(conversationBuffer))
+	// }
 
 	// Create a new app model
 	appCfg, err := app.DefaultConfig()
@@ -181,7 +170,6 @@ func main() {
 		os.Exit(1)
 	}
 	appCfg.ConversationLLM = conversationLlm
-	appCfg.ConversationAgent = conversationAgent
 	appCfg.RAG = r
 	appCfg.ShowPromptInChat = cliCfg.Behavior.ShowPrompt
 	appCfg.LoggerHistorySize = cliCfg.Logger.HistorySize
