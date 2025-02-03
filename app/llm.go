@@ -4,8 +4,6 @@ import (
 	"context"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/tmc/langchaingo/agents"
-	"github.com/tmc/langchaingo/chains"
 	"github.com/tmc/langchaingo/llms"
 )
 
@@ -25,23 +23,6 @@ func submitChat(ctx context.Context, llm llms.Model, chatContext []llms.MessageC
 			sub <- LLMStreamingResponseMsg{err: err}
 		} else {
 			sub <- LLMStreamingResponseMsg{isComplete: true}
-		}
-		return nil
-	}
-}
-
-func submitChatAgent(ctx context.Context, agent agents.Agent, query string, sub chan tea.Msg) tea.Cmd {
-	return func() tea.Msg {
-		// Delegate the user query to the conversational agent
-		executor := agents.NewExecutor(agent)
-		answer, err := chains.Run(context.Background(), executor, query)
-		if err != nil {
-			sub <- LLMStreamingResponseMsg{err: err}
-		} else {
-			sub <- LLMStreamingResponseMsg{
-				chunk:      answer,
-				isComplete: true,
-			}
 		}
 		return nil
 	}
