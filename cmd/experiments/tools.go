@@ -42,7 +42,7 @@ func main() {
 	}
 
 	// Ask the question that the LLM shouldn't be able to answer
-	q := "Find yesterday's date."
+	q := "My birthday is 15 days from now.  My dad's birthday is 30 days after that.  What are those dates?"
 	content := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, "You are a helpful assistant."),
 		llms.TextParts(llms.ChatMessageTypeHuman, q),

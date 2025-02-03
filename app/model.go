@@ -53,13 +53,14 @@ type Model struct {
 	help           help.Model
 	dispatchStream chan tea.Msg
 	viewport       viewport.Model
-	chats          []*models.Chat
-	selectedChat   uint // future use
-	textarea       textarea.Model
-	spinner        spinner.Model
-	chatRenderer   chatRenderer
-	status         status
-	logger         Logger
+	// chats          []*models.Chat
+	// selectedChat   uint // future use
+	chat         *models.Chat
+	textarea     textarea.Model
+	spinner      spinner.Model
+	chatRenderer chatRenderer
+	status       status
+	logger       Logger
 
 	cfg Config
 }
@@ -83,21 +84,14 @@ func New(cfg Config) (Model, error) {
 	spn.Style = lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.SpinnerColor))
 	spn.Spinner = spinner.Points
 
-	// Create a new chat
-	chat, err := models.NewChat(
-		models.WithSystemPromptTemplateFile(cfg.ChatSystemPromptPath),
-		models.WithContextTemplateFile(cfg.ChatContextPromptPath))
-	if err != nil {
-		return Model{}, err
-	}
-
 	return Model{
 		cfg:            cfg,
 		textarea:       ta,
 		help:           help.New(),
 		spinner:        spn,
 		dispatchStream: make(chan tea.Msg),
-		chats:          []*models.Chat{chat},
+		// chats:          []*models.Chat{chat},
+		chat: cfg.Chat,
 		chatRenderer: chatRenderer{
 			senderStyle:      lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.SenderColor)),
 			llmStyle:         lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.LLMColor)),
@@ -111,7 +105,8 @@ func New(cfg Config) (Model, error) {
 }
 
 func (m Model) activeChat() *models.Chat {
-	return m.chats[m.selectedChat]
+	// return m.chats[m.selectedChat]
+	return m.chat
 }
 
 func (m *Model) setStatus(s status) {
@@ -200,10 +195,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// and add that to conversation as additional context
 			ctxs, err := m.cfg.RAG.Query(context.Background(), v, 5, nil, nil) // TODO: Use 'where'?
 			if err != nil {
+				// m.Log(err.Error())
+				fmt.Println(err.Error())
 				chat.SetError(err)
 			} else {
 				err = chat.AddContexts(ctxs)
 				if err != nil {
+					// m.Log(err.Error())
+					fmt.Println(err.Error())
 					chat.SetError(err)
 				}
 			}
@@ -254,14 +253,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle incoming messages
 		if msg.err != nil {
 			chat.SetError(msg.err)
-			m.setStatus(StatusReady)
-		} else if msg.isComplete {
-			chat.EndStreaming()
+			// m.Log(msg.err.Error())
+			fmt.Println(msg.err.Error())
 			m.setStatus(StatusReady)
 		} else {
 			// Append the incoming message to the buffer
 			chat.StreamChunk(msg.chunk)
 			m.setStatus(StatusRetrieving)
+			if msg.isComplete {
+				chat.EndStreaming()
+				m.setStatus(StatusReady)
+			}
 		}
 		// Refresh the viewport content
 		m.viewport.SetContent(m.chatRenderer.Render(chat))

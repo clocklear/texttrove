@@ -198,6 +198,8 @@ github.com/tmc/langchaingo/internal/util
 github.com/tmc/langchaingo/llms
 github.com/tmc/langchaingo/llms/ollama
 github.com/tmc/langchaingo/llms/ollama/internal/ollamaclient
+github.com/tmc/langchaingo/llms/openai
+github.com/tmc/langchaingo/llms/openai/internal/openaiclient
 github.com/tmc/langchaingo/memory
 github.com/tmc/langchaingo/outputparser
 github.com/tmc/langchaingo/prompts
@@ -252,7 +254,7 @@ go.starlark.net/resolve
 go.starlark.net/starlark
 go.starlark.net/starlarkstruct
 go.starlark.net/syntax
-# golang.org/x/crypto v0.25.0
+# golang.org/x/crypto v0.31.0
 ## explicit; go 1.20
 golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blowfish
@@ -263,11 +265,11 @@ golang.org/x/crypto/scrypt
 golang.org/x/exp/constraints
 golang.org/x/exp/maps
 golang.org/x/exp/slices
-# golang.org/x/net v0.27.0
+# golang.org/x/net v0.33.0
 ## explicit; go 1.18
 golang.org/x/net/html
 golang.org/x/net/html/atom
-# golang.org/x/sync v0.9.0
+# golang.org/x/sync v0.10.0
 ## explicit; go 1.18
 golang.org/x/sync/errgroup
 # golang.org/x/sys v0.29.0
@@ -275,10 +277,10 @@ golang.org/x/sync/errgroup
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# golang.org/x/term v0.22.0
+# golang.org/x/term v0.27.0
 ## explicit; go 1.18
 golang.org/x/term
-# golang.org/x/text v0.19.0
+# golang.org/x/text v0.21.0
 ## explicit; go 1.18
 golang.org/x/text/transform
 golang.org/x/text/unicode/rangetable
