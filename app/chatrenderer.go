@@ -12,11 +12,13 @@ import (
 )
 
 type chatRenderer struct {
-	senderStyle      lipgloss.Style
-	llmStyle         lipgloss.Style
-	errorStyle       lipgloss.Style
-	markdownRenderer *glamour.TermRenderer
-	showPrompt       bool
+	senderStyle        lipgloss.Style
+	llmStyle           lipgloss.Style
+	toolStyle          lipgloss.Style
+	errorStyle         lipgloss.Style
+	markdownRenderer   *glamour.TermRenderer
+	showSystemMessages bool
+	showToolMessages   bool
 }
 
 func (r *chatRenderer) Render(c *models.Chat) string {
@@ -45,10 +47,20 @@ func (r *chatRenderer) renderMessageContent(m *llms.MessageContent) (string, err
 	case llms.ChatMessageTypeAI:
 		outputBuf.WriteString(r.llmStyle.Render("AI: "))
 	case llms.ChatMessageTypeSystem:
-		if r.showPrompt {
+		if r.showSystemMessages {
 			outputBuf.WriteString(r.llmStyle.Render("System: "))
 		} else {
 			// System messages will be reserved for passing the prompt to the system.
+			// We don't want to render these.
+			return "", nil
+		}
+	case llms.ChatMessageTypeFunction:
+		fallthrough
+	case llms.ChatMessageTypeTool:
+		if r.showToolMessages {
+			outputBuf.WriteString(r.toolStyle.Render("Tool: "))
+		} else {
+			// Tool messages will be reserved for passing additional context to the system.
 			// We don't want to render these.
 			return "", nil
 		}

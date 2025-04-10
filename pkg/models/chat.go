@@ -123,7 +123,7 @@ func (c *Chat) Reset() {
 	c.err = nil
 	c.completedMessages = make([]llms.MessageContent, 0)
 	c.streamingParts = make([]string, 0)
-	c.pushSystemPrompt()
+	_ = c.pushSystemPrompt()
 }
 
 func (c *Chat) Error() error {
@@ -133,8 +133,12 @@ func (c *Chat) Error() error {
 }
 
 func (c *Chat) SetError(err error) {
+	if err == nil {
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	fmt.Println("Error: " + err.Error())
 	c.err = err
 }
 
@@ -194,7 +198,7 @@ func (c *Chat) IsEmpty() bool {
 	return len(c.completedMessages) == 0
 }
 
-func (c *Chat) AddContexts(contexts []schema.Document) error {
+func (c *Chat) AddContexts(contexts []schema.Document, cmt llms.ChatMessageType) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -209,9 +213,28 @@ func (c *Chat) AddContexts(contexts []schema.Document) error {
 	if err != nil {
 		return err
 	}
-	c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeSystem, t))
+	c.completedMessages = append(c.completedMessages, llms.TextParts(cmt, t))
 	return nil
 }
+
+// func (c *Chat) AddFunctionContexts(funcName string, funcArgs map[string]any, contexts []schema.Document) error {
+// 	c.mu.Lock()
+// 	defer c.mu.Unlock()
+
+// 	// Extract slice of content from the documents
+// 	content := make([]string, 0, len(contexts))
+// 	for _, doc := range contexts {
+// 		content = append(content, doc.PageContent)
+// 	}
+
+// 	// Render the context template
+// 	t, err := c.contextTpl.Format(map[string]interface{}{"contexts": content})
+// 	if err != nil {
+// 		return err
+// 	}
+// 	c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeSystem, t))
+// 	return nil
+// }
 
 func (c *Chat) streamingPartsToContent() llms.MessageContent {
 	c.mu.RLock()
@@ -268,6 +291,12 @@ func (c *Chat) Messages(ctx context.Context) ([]llms.ChatMessage, error) {
 			messages = append(messages, llms.HumanChatMessage{Content: sb.String()})
 		case llms.ChatMessageTypeSystem:
 			messages = append(messages, llms.SystemChatMessage{Content: sb.String()})
+		case llms.ChatMessageTypeFunction:
+			messages = append(messages, llms.FunctionChatMessage{Content: sb.String()})
+		case llms.ChatMessageTypeGeneric:
+			messages = append(messages, llms.GenericChatMessage{Content: sb.String()})
+		case llms.ChatMessageTypeTool:
+			messages = append(messages, llms.ToolChatMessage{Content: sb.String()})
 		}
 	}
 	return messages, nil
@@ -282,14 +311,7 @@ func (c *Chat) SetMessages(ctx context.Context, messages []llms.ChatMessage) err
 	c.completedMessages = make([]llms.MessageContent, 0)
 	c.streamingParts = make([]string, 0)
 	for _, m := range messages {
-		switch m.GetType() {
-		case llms.ChatMessageTypeAI:
-			c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeAI, m.GetContent()))
-		case llms.ChatMessageTypeHuman:
-			c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeHuman, m.GetContent()))
-		case llms.ChatMessageTypeSystem:
-			c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeSystem, m.GetContent()))
-		}
+		c.completedMessages = append(c.completedMessages, llms.TextParts(m.GetType(), m.GetContent()))
 	}
 	return nil
 }

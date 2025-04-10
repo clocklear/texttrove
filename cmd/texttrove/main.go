@@ -53,7 +53,9 @@ type config struct {
 	}
 	Behavior struct {
 		ShowPrompt         bool `default:"false" split_words:"true"`
+		ShowToolResponses  bool `default:"false" split_words:"true"`
 		MaxDocumentResults int  `default:"5"`
+		ManualRAG          bool `envconfig:"MANUAL_RAG" default:"true"`
 	}
 	Logger struct {
 		HistorySize uint `default:"100"`
@@ -171,7 +173,9 @@ func main() {
 	}
 	appCfg.ConversationLLM = conversationLlm
 	appCfg.RAG = r
+	appCfg.UseManualRAG = cliCfg.Behavior.ManualRAG
 	appCfg.ShowPromptInChat = cliCfg.Behavior.ShowPrompt
+	appCfg.ShowToolResponsesInChat = cliCfg.Behavior.ShowToolResponses
 	appCfg.LoggerHistorySize = cliCfg.Logger.HistorySize
 	appCfg.Chat = chat
 	appCfg.ChatSystemPromptPath = cliCfg.SystemPromptPath

@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/bubbles/v2/viewport"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/schema"
 )
 
@@ -93,11 +94,13 @@ func New(cfg Config) (Model, error) {
 		// chats:          []*models.Chat{chat},
 		chat: cfg.Chat,
 		chatRenderer: chatRenderer{
-			senderStyle:      lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.SenderColor)),
-			llmStyle:         lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.LLMColor)),
-			errorStyle:       lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.ErrorColor)),
-			markdownRenderer: cfg.MarkdownRenderer,
-			showPrompt:       cfg.ShowPromptInChat,
+			senderStyle:        lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.SenderColor)),
+			llmStyle:           lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.LLMColor)),
+			toolStyle:          lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.ToolColor)),
+			errorStyle:         lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(cfg.ErrorColor)),
+			markdownRenderer:   cfg.MarkdownRenderer,
+			showSystemMessages: cfg.ShowPromptInChat,
+			showToolMessages:   cfg.ShowToolResponsesInChat,
 		},
 		status: StatusInitializing,
 		logger: l,
@@ -113,6 +116,10 @@ func (m *Model) setStatus(s status) {
 	m.status = s
 }
 
+func (m *Model) Log(msg string) {
+	m.dispatchStream <- LogMsg(msg)
+}
+
 func waitForActivity(sub chan tea.Msg) tea.Cmd {
 	return func() tea.Msg {
 		return <-sub
@@ -124,11 +131,6 @@ func (m Model) Init() (tea.Model, tea.Cmd) {
 		textarea.Blink,
 		waitForActivity(m.dispatchStream),
 	)
-}
-
-func (m Model) Log(msg string) {
-
-	m.dispatchStream <- LogMsg(msg)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -191,19 +193,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Try to find supporting information for the user's query
-			// and add that to conversation as additional context
-			ctxs, err := m.cfg.RAG.Query(context.Background(), v, 5, nil, nil) // TODO: Use 'where'?
-			if err != nil {
-				// m.Log(err.Error())
-				fmt.Println(err.Error())
-				chat.SetError(err)
-			} else {
-				err = chat.AddContexts(ctxs)
+			if m.cfg.UseManualRAG {
+				// Try to find supporting information for the user's query
+				// and add that to conversation as additional context
+				ctxs, err := m.cfg.RAG.Query(context.Background(), v, 5, nil, nil) // TODO: Use 'where'?
 				if err != nil {
-					// m.Log(err.Error())
-					fmt.Println(err.Error())
 					chat.SetError(err)
+				} else {
+					err = chat.AddContexts(ctxs, llms.ChatMessageTypeSystem)
+					if err != nil {
+						chat.SetError(err)
+					}
 				}
 			}
 
@@ -252,9 +252,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case LLMStreamingResponseMsg:
 		// Handle incoming messages
 		if msg.err != nil {
+			// fmt.Println("ERROR!", msg.err)
 			chat.SetError(msg.err)
-			// m.Log(msg.err.Error())
-			fmt.Println(msg.err.Error())
 			m.setStatus(StatusReady)
 		} else {
 			// Append the incoming message to the buffer
@@ -263,6 +262,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.isComplete {
 				chat.EndStreaming()
 				m.setStatus(StatusReady)
+			}
+			// Are there function calls to invoke?
+			chatFollowup := false
+			for _, fc := range msg.functionCalls {
+				switch fc.Name {
+				case "knowledge_base_search":
+					// Try to find supporting information for the user's query
+					// and add that to conversation as additional context
+					q, ok := fc.Arguments["query"]
+					if ok {
+						qs := q.(string)
+						ctxs, err := m.cfg.RAG.Query(context.Background(), qs, 5, nil, nil) // TODO: Use 'where'?
+						if err != nil {
+							chat.SetError(err)
+						} else {
+							err = chat.AddContexts(ctxs, llms.ChatMessageTypeTool)
+							if err != nil {
+								chat.SetError(err)
+							} else {
+								chatFollowup = true
+							}
+						}
+					}
+				}
+			}
+
+			if chatFollowup {
+				// Reset (chat) err
+				chat.ClearError()
+				chat.BeginStreaming()
+				m.setStatus(StatusQuerying)
+
+				m.viewport.SetContent(m.chatRenderer.Render(chat))
+				m.viewport.GotoBottom()
+
+				// Send the conversation to the LLM for followup
+				return m, tea.Batch(
+					waitForActivity(m.dispatchStream),
+					submitChat(context.Background(), m.cfg.ConversationLLM, chat.Log(), m.dispatchStream),
+					m.spinner.Tick,
+				)
 			}
 		}
 		// Refresh the viewport content
