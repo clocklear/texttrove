@@ -176,6 +176,18 @@ func (c *Chat) AppendUserMessage(msg string) {
 	c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeHuman, msg))
 }
 
+func (c *Chat) AppendAssistantMessage(msg string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeAI, msg))
+}
+
+func (c *Chat) AppendSystemMessage(msg string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.completedMessages = append(c.completedMessages, llms.TextParts(llms.ChatMessageTypeSystem, msg))
+}
+
 func (c *Chat) Log() []llms.MessageContent {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
