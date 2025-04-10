@@ -1,7 +1,9 @@
 package colorprofile
 
 import (
+	"bytes"
 	"io"
+	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
@@ -9,6 +11,8 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/xo/terminfo"
 )
+
+const dumbTerm = "dumb"
 
 // Detect returns the color profile based on the terminal output, and
 // environment variables. This respects NO_COLOR, CLICOLOR, and CLICOLOR_FORCE
@@ -25,10 +29,27 @@ import (
 //     colors but not text decoration, i.e. bold, italic, faint, etc.
 //
 // See https://no-color.org/ and https://bixense.com/clicolors/ for more information.
-func Detect(output io.Writer, environ []string) (p Profile) {
+func Detect(output io.Writer, env []string) Profile {
 	out, ok := output.(term.File)
-	isatty := ok && term.IsTerminal(out.Fd())
-	return colorProfile(isatty, environ)
+	environ := newEnviron(env)
+	isatty := isTTYForced(environ) || (ok && term.IsTerminal(out.Fd()))
+	term := environ.get("TERM")
+	isDumb := term == dumbTerm
+	envp := colorProfile(isatty, environ)
+	if envp == TrueColor || envNoColor(environ) {
+		// We already know we have TrueColor, or NO_COLOR is set.
+		return envp
+	}
+
+	if isatty && !isDumb {
+		tip := Terminfo(term)
+		tmuxp := tmux(environ)
+
+		// Color profile is the maximum of env, terminfo, and tmux.
+		return max(envp, max(tip, tmuxp))
+	}
+
+	return envp
 }
 
 // Env returns the color profile based on the terminal environment variables.
@@ -45,46 +66,41 @@ func Detect(output io.Writer, environ []string) (p Profile) {
 //     colors but not text decoration, i.e. bold, italic, faint, etc.
 //
 // See https://no-color.org/ and https://bixense.com/clicolors/ for more information.
-func Env(environ []string) (p Profile) {
-	return colorProfile(true, environ)
+func Env(env []string) (p Profile) {
+	return colorProfile(true, newEnviron(env))
 }
 
-func colorProfile(isatty bool, environ []string) (p Profile) {
-	env := environMap(environ)
-	envProfile := envColorProfile(env)
-
-	// Start with the environment profile.
-	p = envProfile
-
-	term := strings.ToLower(env["TERM"])
-	isDumb := term == "dumb"
-
-	// Check if the output is a terminal.
-	// Treat dumb terminals as NoTTY
+func colorProfile(isatty bool, env environ) (p Profile) {
+	isDumb := env.get("TERM") == dumbTerm
+	envp := envColorProfile(env)
 	if !isatty || isDumb {
+		// Check if the output is a terminal.
+		// Treat dumb terminals as NoTTY
 		p = NoTTY
+	} else {
+		p = envp
 	}
 
-	if envNoColor(env) {
-		if p < Ascii {
+	if envNoColor(env) && isatty {
+		if p > Ascii {
 			p = Ascii
 		}
-		return
+		return //nolint:nakedret
 	}
 
 	if cliColorForced(env) {
-		if p > ANSI {
+		if p < ANSI {
 			p = ANSI
 		}
-		if envProfile < p {
-			p = envProfile
+		if envp > p {
+			p = envp
 		}
 
-		return
+		return //nolint:nakedret
 	}
 
 	if cliColor(env) {
-		if isatty && !isDumb && p > ANSI {
+		if isatty && !isDumb && p < ANSI {
 			p = ANSI
 		}
 	}
@@ -94,104 +110,156 @@ func colorProfile(isatty bool, environ []string) (p Profile) {
 
 // envNoColor returns true if the environment variables explicitly disable color output
 // by setting NO_COLOR (https://no-color.org/).
-func envNoColor(env map[string]string) bool {
-	noColor, _ := strconv.ParseBool(env["NO_COLOR"])
+func envNoColor(env environ) bool {
+	noColor, _ := strconv.ParseBool(env.get("NO_COLOR"))
 	return noColor
 }
 
-func cliColor(env map[string]string) bool {
-	cliColor, _ := strconv.ParseBool(env["CLICOLOR"])
+func cliColor(env environ) bool {
+	cliColor, _ := strconv.ParseBool(env.get("CLICOLOR"))
 	return cliColor
 }
 
-func cliColorForced(env map[string]string) bool {
-	cliColorForce, _ := strconv.ParseBool(env["CLICOLOR_FORCE"])
+func cliColorForced(env environ) bool {
+	cliColorForce, _ := strconv.ParseBool(env.get("CLICOLOR_FORCE"))
 	return cliColorForce
 }
 
-func colorTerm(env map[string]string) bool {
-	colorTerm := strings.ToLower(env["COLORTERM"])
+func isTTYForced(env environ) bool {
+	skip, _ := strconv.ParseBool(env.get("TTY_FORCE"))
+	return skip
+}
+
+func colorTerm(env environ) bool {
+	colorTerm := strings.ToLower(env.get("COLORTERM"))
 	return colorTerm == "truecolor" || colorTerm == "24bit" ||
 		colorTerm == "yes" || colorTerm == "true"
 }
 
 // envColorProfile returns infers the color profile from the environment.
-func envColorProfile(env map[string]string) (p Profile) {
-	term, ok := env["TERM"]
-	term = strings.ToLower(term)
-	switch term {
-	case "", "dumb":
+func envColorProfile(env environ) (p Profile) {
+	term, ok := env.lookup("TERM")
+	if !ok || len(term) == 0 || term == dumbTerm {
 		p = NoTTY
-	case "alacritty", "contour", "wezterm", "xterm-ghostty", "xterm-kitty":
-		p = TrueColor
-		return
-	case "linux":
-		if p > ANSI {
-			p = ANSI
+		if runtime.GOOS == "windows" {
+			// Use Windows API to detect color profile. Windows Terminal and
+			// cmd.exe don't define $TERM.
+			if wcp, ok := windowsColorProfile(env); ok {
+				p = wcp
+			}
 		}
-	default:
-		p = Ascii // Default to Ascii
+	} else {
+		p = ANSI
 	}
 
-	if !ok && runtime.GOOS == "windows" {
-		// Use Windows API to detect color profile
-		wcp, _ := windowsColorProfile(env)
-		if wcp < p {
-			p = wcp
+	parts := strings.Split(term, "-")
+	switch parts[0] {
+	case "alacritty",
+		"contour",
+		"foot",
+		"ghostty",
+		"kitty",
+		"rio",
+		"st",
+		"wezterm":
+		return TrueColor
+	case "xterm":
+		if len(parts) > 1 {
+			switch parts[1] {
+			case "ghostty", "kitty":
+				// These terminals can be defined as xterm-TERMNAME
+				return TrueColor
+			}
+		}
+	case "tmux", "screen":
+		if p < ANSI256 {
+			p = ANSI256
 		}
 	}
 
-	if isCloudShell, _ := strconv.ParseBool(env["GOOGLE_CLOUD_SHELL"]); isCloudShell {
-		p = TrueColor
-		return
+	if isCloudShell, _ := strconv.ParseBool(env.get("GOOGLE_CLOUD_SHELL")); isCloudShell {
+		return TrueColor
 	}
 
-	if colorTerm(env) {
-		p = TrueColor
-		return
+	// GNU Screen doesn't support TrueColor
+	// Tmux doesn't support $COLORTERM
+	if colorTerm(env) && !strings.HasPrefix(term, "screen") && !strings.HasPrefix(term, "tmux") {
+		return TrueColor
 	}
 
-	if strings.Contains(term, "256color") && p > ANSI256 {
+	if strings.HasSuffix(term, "256color") && p < ANSI256 {
 		p = ANSI256
 	}
-	if strings.Contains(term, "color") && p > ANSI {
-		p = ANSI
-	}
-	if strings.Contains(term, "ansi") && p > ANSI {
-		p = ANSI
+
+	return //nolint:nakedret
+}
+
+// Terminfo returns the color profile based on the terminal's terminfo
+// database. This relies on the Tc and RGB capabilities to determine if the
+// terminal supports TrueColor.
+// If term is empty or "dumb", it returns NoTTY.
+func Terminfo(term string) (p Profile) {
+	if len(term) == 0 || term == "dumb" {
+		return NoTTY
 	}
 
+	p = ANSI
 	ti, err := terminfo.Load(term)
-	if err == nil {
-		extbools := ti.ExtBoolCapsShort()
-		if _, ok := extbools["RGB"]; ok {
-			p = TrueColor
-			return
-		}
+	if err != nil {
+		return
+	}
 
-		if _, ok := extbools["Tc"]; ok {
-			p = TrueColor
-			return
-		}
+	extbools := ti.ExtBoolCapsShort()
+	if _, ok := extbools["Tc"]; ok {
+		return TrueColor
+	}
 
-		nums := ti.NumCapsShort()
-		if colors, ok := nums["colors"]; ok {
-			if colors >= 0x1000000 {
-				p = TrueColor
-				return
-			} else if colors >= 0x100 && p > ANSI256 {
-				p = ANSI256
-			} else if colors >= 0x10 && p > ANSI {
-				p = ANSI
-			}
+	if _, ok := extbools["RGB"]; ok {
+		return TrueColor
+	}
+
+	return
+}
+
+// Tmux returns the color profile based on `tmux info` output. Tmux supports
+// overriding the terminal's color capabilities, so this function will return
+// the color profile based on the tmux configuration.
+func Tmux(env []string) Profile {
+	return tmux(newEnviron(env))
+}
+
+// tmux returns the color profile based on the tmux environment variables.
+func tmux(env environ) (p Profile) {
+	if tmux, ok := env.lookup("TMUX"); !ok || len(tmux) == 0 {
+		// Not in tmux
+		return NoTTY
+	}
+
+	// Check if tmux has either Tc or RGB capabilities. Otherwise, return
+	// ANSI256.
+	p = ANSI256
+	cmd := exec.Command("tmux", "info")
+	out, err := cmd.Output()
+	if err != nil {
+		return
+	}
+
+	for _, line := range bytes.Split(out, []byte("\n")) {
+		if (bytes.Contains(line, []byte("Tc")) || bytes.Contains(line, []byte("RGB"))) &&
+			bytes.Contains(line, []byte("true")) {
+			return TrueColor
 		}
 	}
 
 	return
 }
 
-// environMap converts an environment slice to a map.
-func environMap(environ []string) map[string]string {
+// environ is a map of environment variables.
+type environ map[string]string
+
+// newEnviron returns a new environment map from a slice of environment
+// variables.
+func newEnviron(environ []string) environ {
 	m := make(map[string]string, len(environ))
 	for _, e := range environ {
 		parts := strings.SplitN(e, "=", 2)
@@ -202,4 +270,18 @@ func environMap(environ []string) map[string]string {
 		m[parts[0]] = value
 	}
 	return m
+}
+
+// lookup returns the value of an environment variable and a boolean indicating
+// if it exists.
+func (e environ) lookup(key string) (string, bool) {
+	v, ok := e[key]
+	return v, ok
+}
+
+// get returns the value of an environment variable and empty string if it
+// doesn't exist.
+func (e environ) get(key string) string {
+	v, _ := e.lookup(key)
+	return v
 }

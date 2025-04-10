@@ -1,13 +1,13 @@
 module github.com/clocklear/texttrove
 
-go 1.23.0
+go 1.24.2
 
 require (
 	github.com/adrg/frontmatter v0.2.0
-	github.com/charmbracelet/bubbles/v2 v2.0.0-alpha.2
-	github.com/charmbracelet/bubbletea/v2 v2.0.0-alpha.2
+	github.com/charmbracelet/bubbles/v2 v2.0.0-beta.1
+	github.com/charmbracelet/bubbletea/v2 v2.0.0-beta.1
 	github.com/charmbracelet/glamour v0.8.0
-	github.com/charmbracelet/lipgloss/v2 v2.0.0-alpha.2
+	github.com/charmbracelet/lipgloss/v2 v2.0.0-beta.1
 	github.com/clocklear/chromem-go v0.7.1-pre.0
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/kelseyhightower/envconfig v1.4.0
@@ -24,12 +24,12 @@ require (
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
-	github.com/charmbracelet/colorprofile v0.1.6 // indirect
+	github.com/charmbracelet/colorprofile v0.3.0 // indirect
 	github.com/charmbracelet/lipgloss v1.0.0 // indirect
-	github.com/charmbracelet/x/ansi v0.4.5 // indirect
-	github.com/charmbracelet/x/cellbuf v0.0.3 // indirect
+	github.com/charmbracelet/x/ansi v0.8.0 // indirect
+	github.com/charmbracelet/x/cellbuf v0.0.13 // indirect
+	github.com/charmbracelet/x/input v0.3.4 // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
-	github.com/charmbracelet/x/wcwidth v0.0.0-20241011142426-46044092ad91 // indirect
 	github.com/charmbracelet/x/windows v0.2.0 // indirect
 	github.com/dlclark/regexp2 v1.11.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -71,10 +71,10 @@ require (
 	golang.org/x/crypto v0.29.0 // indirect
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
 	golang.org/x/net v0.27.0 // indirect
-	golang.org/x/sync v0.9.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
+	golang.org/x/sync v0.12.0 // indirect
+	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/term v0.26.0 // indirect
-	golang.org/x/text v0.20.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

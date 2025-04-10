@@ -1,19 +1,20 @@
 package tea
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/input"
 	"github.com/charmbracelet/x/term"
 	"github.com/muesli/cancelreader"
 )
 
 func (p *Program) suspend() {
-	if err := p.ReleaseTerminal(); err != nil {
+	if err := p.releaseTerminal(true); err != nil {
 		// If we can't release input, abort.
 		return
 	}
@@ -25,7 +26,7 @@ func (p *Program) suspend() {
 }
 
 func (p *Program) initTerminal() error {
-	if _, ok := p.renderer.(*nilRenderer); ok {
+	if !hasView(p.initialModel) {
 		// No need to initialize the terminal if we're not rendering
 		return nil
 	}
@@ -36,38 +37,37 @@ func (p *Program) initTerminal() error {
 // restoreTerminalState restores the terminal to the state prior to running the
 // Bubble Tea program.
 func (p *Program) restoreTerminalState() error {
-	if p.modes[ansi.BracketedPasteMode.String()] {
-		p.execute(ansi.DisableBracketedPaste)
+	// We don't need to reset [ansi.AltScreenSaveCursorMode] and
+	// [ansi.TextCursorEnableMode] because they are automatically reset when we
+	// close the renderer. See [screenRenderer.close] and
+	// [cellbuf.Screen.Close].
+
+	if p.modes.IsSet(ansi.BracketedPasteMode) {
+		p.execute(ansi.ResetBracketedPasteMode)
 	}
-	if !p.modes[ansi.CursorEnableMode.String()] {
-		p.execute(ansi.ShowCursor)
+
+	btnEvents := p.modes.IsSet(ansi.ButtonEventMouseMode)
+	allEvents := p.modes.IsSet(ansi.AnyEventMouseMode)
+	if btnEvents || allEvents {
+		if btnEvents {
+			p.execute(ansi.ResetButtonEventMouseMode)
+		}
+		if allEvents {
+			p.execute(ansi.ResetAnyEventMouseMode)
+		}
+		p.execute(ansi.ResetSgrExtMouseMode)
 	}
-	if p.modes[ansi.MouseCellMotionMode.String()] || p.modes[ansi.MouseAllMotionMode.String()] {
-		p.execute(ansi.DisableMouseCellMotion)
-		p.execute(ansi.DisableMouseAllMotion)
-		p.execute(ansi.DisableMouseSgrExt)
+	if p.activeEnhancements.modifyOtherKeys != 0 {
+		p.execute(ansi.ResetModifyOtherKeys)
 	}
-	if p.keyboard.modifyOtherKeys != 0 {
-		p.execute(ansi.DisableModifyOtherKeys)
-	}
-	if p.keyboard.kittyFlags != 0 {
+	if p.activeEnhancements.kittyFlags != 0 {
 		p.execute(ansi.DisableKittyKeyboard)
 	}
-	if p.modes[ansi.ReportFocusMode.String()] {
-		p.execute(ansi.DisableReportFocus)
+	if p.modes.IsSet(ansi.FocusEventMode) {
+		p.execute(ansi.ResetFocusEventMode)
 	}
-	if p.modes[ansi.GraphemeClusteringMode.String()] {
-		p.execute(ansi.DisableGraphemeClustering)
-	}
-	if p.modes[ansi.AltScreenBufferMode.String()] {
-		p.execute(ansi.DisableAltScreenBuffer)
-		// cmd.exe and other terminals keep separate cursor states for the AltScreen
-		// and the main buffer. We have to explicitly reset the cursor visibility
-		// whenever we exit AltScreen.
-		p.execute(ansi.ShowCursor)
-
-		// give the terminal a moment to catch up
-		time.Sleep(time.Millisecond * 10) //nolint:gomnd
+	if p.modes.IsSet(ansi.GraphemeClusteringMode) {
+		p.execute(ansi.ResetGraphemeClusteringMode)
 	}
 
 	// Restore terminal colors.
@@ -88,19 +88,24 @@ func (p *Program) restoreTerminalState() error {
 func (p *Program) restoreInput() error {
 	if p.ttyInput != nil && p.previousTtyInputState != nil {
 		if err := term.Restore(p.ttyInput.Fd(), p.previousTtyInputState); err != nil {
-			return fmt.Errorf("error restoring console: %w", err)
+			return fmt.Errorf("bubbletea: error restoring console: %w", err)
 		}
 	}
 	if p.ttyOutput != nil && p.previousOutputState != nil {
 		if err := term.Restore(p.ttyOutput.Fd(), p.previousOutputState); err != nil {
-			return fmt.Errorf("error restoring console: %w", err)
+			return fmt.Errorf("bubbletea: error restoring console: %w", err)
 		}
 	}
 	return nil
 }
 
 // initInputReader (re)commences reading inputs.
-func (p *Program) initInputReader() error {
+func (p *Program) initInputReader(cancel bool) error {
+	if cancel && p.inputReader != nil {
+		p.inputReader.Cancel()
+		p.waitForReadLoop()
+	}
+
 	term := p.getenv("TERM")
 
 	// Initialize the input reader.
@@ -108,13 +113,19 @@ func (p *Program) initInputReader() error {
 	// raw mode.
 	// On Windows, this will change the console mode to enable mouse and window
 	// events.
-	var flags int // TODO: make configurable through environment variables?
-	drv, err := newDriver(p.input, term, flags)
-	if err != nil {
-		return err
+	var flags int
+	if p.mouseMode {
+		flags |= input.FlagMouseMode
 	}
 
-	drv.trace = p.traceInput
+	drv, err := input.NewReader(p.input, term, flags)
+	if err != nil {
+		return fmt.Errorf("bubbletea: error initializing input reader: %w", err)
+	}
+
+	if p.traceInput {
+		drv.SetLogger(log.Default())
+	}
 	p.inputReader = drv
 	p.readLoopDone = make(chan struct{})
 	go p.readLoop()
@@ -122,23 +133,21 @@ func (p *Program) initInputReader() error {
 	return nil
 }
 
-func readInputs(ctx context.Context, msgs chan<- Msg, reader *driver) error {
+func (p *Program) readInputs() error {
 	for {
-		events, err := reader.ReadEvents()
+		events, err := p.inputReader.ReadEvents()
 		if err != nil {
-			return err
+			return fmt.Errorf("bubbletea: error reading input: %w", err)
 		}
 
 		for _, msg := range events {
-			incomingMsgs := []Msg{msg}
-
-			for _, m := range incomingMsgs {
+			if m := p.translateInputEvent(msg); m != nil {
 				select {
-				case msgs <- m:
-				case <-ctx.Done():
-					err := ctx.Err()
+				case p.msgs <- m:
+				case <-p.ctx.Done():
+					err := p.ctx.Err()
 					if err != nil {
-						err = fmt.Errorf("found context error while reading input: %w", err)
+						err = fmt.Errorf("bubbletea: found context error while reading input: %w", err)
 					}
 					return err
 				}
@@ -150,7 +159,7 @@ func readInputs(ctx context.Context, msgs chan<- Msg, reader *driver) error {
 func (p *Program) readLoop() {
 	defer close(p.readLoopDone)
 
-	err := readInputs(p.ctx, p.msgs, p.inputReader)
+	err := p.readInputs()
 	if !errors.Is(err, io.EOF) && !errors.Is(err, cancelreader.ErrCanceled) {
 		select {
 		case <-p.ctx.Done():
@@ -163,7 +172,7 @@ func (p *Program) readLoop() {
 func (p *Program) waitForReadLoop() {
 	select {
 	case <-p.readLoopDone:
-	case <-time.After(500 * time.Millisecond): //nolint:gomnd
+	case <-time.After(500 * time.Millisecond): //nolint:mnd
 		// The read loop hangs, which means the input
 		// cancelReader's cancel function has returned true even
 		// though it was not able to cancel the read.
@@ -188,8 +197,8 @@ func (p *Program) checkResize() {
 		return
 	}
 
-	p.Send(WindowSizeMsg{
-		Width:  w,
-		Height: h,
-	})
+	var resizeMsg WindowSizeMsg
+	resizeMsg.Width = w
+	resizeMsg.Height = h
+	p.Send(resizeMsg)
 }

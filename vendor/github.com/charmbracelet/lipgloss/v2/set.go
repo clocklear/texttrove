@@ -175,7 +175,7 @@ func (s Style) Italic(v bool) Style {
 
 // Underline sets an underline rule. By default, underlines will not be drawn on
 // whitespace like margins and padding. To change this behavior set
-// UnderlineSpaces.
+// [Style.UnderlineSpaces].
 func (s Style) Underline(v bool) Style {
 	s.set(underlineKey, v)
 	return s
@@ -225,8 +225,9 @@ func (s Style) Background(c color.Color) Style {
 	return s
 }
 
-// Width sets the width of the block before applying margins. The width, if
-// set, also determines where text will wrap.
+// Width sets the width of the block before applying margins. This means your
+// styled content will exactly equal the size set here. Text will wrap based on
+// Padding and Borders set on the style.
 func (s Style) Width(i int) Style {
 	s.set(widthKey, i)
 	return s

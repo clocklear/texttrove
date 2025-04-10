@@ -124,8 +124,8 @@ func waitForActivity(sub chan tea.Msg) tea.Cmd {
 	}
 }
 
-func (m Model) Init() (tea.Model, tea.Cmd) {
-	return m, tea.Batch(
+func (m Model) Init() tea.Cmd {
+	return tea.Batch(
 		textarea.Blink,
 		waitForActivity(m.dispatchStream),
 	)

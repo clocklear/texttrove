@@ -6,9 +6,13 @@ import (
 	"unicode"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/cellbuf"
 )
 
-const tabWidthDefault = 4
+const (
+	nbsp            = '\u00A0'
+	tabWidthDefault = 4
+)
 
 // Property for a key.
 type propKey int64
@@ -96,7 +100,7 @@ func (p props) has(k propKey) bool {
 }
 
 // NewStyle returns a new, empty Style. While it's syntactic sugar for the
-// Style{} primitive, it's recommended to use this function for creating styles
+// [Style]{} primitive, it's recommended to use this function for creating styles
 // in case the underlying implementation changes.
 func NewStyle() Style {
 	return Style{}
@@ -155,10 +159,10 @@ func joinString(strs ...string) string {
 }
 
 // SetString sets the underlying string value for this style. To render once
-// the underlying string is set, use the Style.String. This method is
+// the underlying string is set, use the [Style.String]. This method is
 // a convenience for cases when having a stringer implementation is handy, such
 // as when using fmt.Sprintf. You can also simply define a style and render out
-// strings directly with Style.Render.
+// strings directly with [Style.Render].
 func (s Style) SetString(strs ...string) Style {
 	s.value = joinString(strs...)
 	return s
@@ -252,6 +256,9 @@ func (s Style) Render(strs ...string) string {
 		bottomPadding = s.getAsInt(paddingBottomKey)
 		leftPadding   = s.getAsInt(paddingLeftKey)
 
+		horizontalBorderSize = s.GetHorizontalBorderSize()
+		verticalBorderSize   = s.GetVerticalBorderSize()
+
 		colorWhitespace = s.getAsBool(colorWhitespaceKey, true)
 		inline          = s.getAsBool(inlineKey, false)
 		maxWidth        = s.getAsInt(maxWidthKey)
@@ -342,10 +349,14 @@ func (s Style) Render(strs ...string) string {
 		str = strings.ReplaceAll(str, "\n", "")
 	}
 
+	// Include borders in block size.
+	width -= horizontalBorderSize
+	height -= verticalBorderSize
+
 	// Word wrap
 	if !inline && width > 0 {
 		wrapAt := width - leftPadding - rightPadding
-		str = ansi.Wrap(str, wrapAt, "")
+		str = cellbuf.Wrap(str, wrapAt, "")
 	}
 
 	// Render core text
@@ -381,15 +392,18 @@ func (s Style) Render(strs ...string) string {
 			if colorWhitespace || styleWhitespace {
 				st = &teWhitespace
 			}
-			str = padLeft(str, leftPadding, st)
+			str = padLeft(str, leftPadding, st, nbsp)
 		}
+
+		// XXX: We use a non-breaking space to pad so that the padding is
+		// preserved when the string is copied and pasted.
 
 		if rightPadding > 0 {
 			var st *ansi.Style
 			if colorWhitespace || styleWhitespace {
 				st = &teWhitespace
 			}
-			str = padRight(str, rightPadding, st)
+			str = padRight(str, rightPadding, st, nbsp)
 		}
 
 		if topPadding > 0 {
@@ -412,7 +426,7 @@ func (s Style) Render(strs ...string) string {
 	{
 		numLines := strings.Count(str, "\n")
 
-		if !(numLines == 0 && width == 0) {
+		if numLines != 0 || width != 0 {
 			var st *ansi.Style
 			if colorWhitespace || styleWhitespace {
 				st = &teWhitespace
@@ -480,8 +494,8 @@ func (s Style) applyMargins(str string, inline bool) string {
 	}
 
 	// Add left and right margin
-	str = padLeft(str, leftMargin, &style)
-	str = padRight(str, rightMargin, &style)
+	str = padLeft(str, leftMargin, &style, ' ')
+	str = padRight(str, rightMargin, &style, ' ')
 
 	// Top/bottom margin
 	if !inline {
@@ -500,24 +514,27 @@ func (s Style) applyMargins(str string, inline bool) string {
 }
 
 // Apply left padding.
-func padLeft(str string, n int, style *ansi.Style) string {
-	return pad(str, -n, style)
+func padLeft(str string, n int, style *ansi.Style, r rune) string {
+	return pad(str, -n, style, r)
 }
 
 // Apply right padding.
-func padRight(str string, n int, style *ansi.Style) string {
-	return pad(str, n, style)
+func padRight(str string, n int, style *ansi.Style, r rune) string {
+	return pad(str, n, style, r)
 }
 
 // pad adds padding to either the left or right side of a string.
 // Positive values add to the right side while negative values
 // add to the left side.
-func pad(str string, n int, style *ansi.Style) string {
+// r is the rune to use for padding. We use " " for margins and
+// "\u00A0" for padding so that the padding is preserved when the
+// string is copied and pasted.
+func pad(str string, n int, style *ansi.Style, r rune) string {
 	if n == 0 {
 		return str
 	}
 
-	sp := strings.Repeat(" ", abs(n))
+	sp := strings.Repeat(string(r), abs(n))
 	if style != nil {
 		sp = style.Styled(sp)
 	}

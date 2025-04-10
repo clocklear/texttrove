@@ -32,7 +32,7 @@ type clearScreenMsg struct{}
 // model's Init function. To initialize your program with the altscreen enabled
 // use the WithAltScreen ProgramOption instead.
 func EnterAltScreen() Msg {
-	return enableMode(ansi.AltScreenBufferMode.String())
+	return enableModeMsg{ansi.AltScreenSaveCursorMode}
 }
 
 // ExitAltScreen is a special command that tells the Bubble Tea program to exit
@@ -42,8 +42,12 @@ func EnterAltScreen() Msg {
 // Note that the alternate screen buffer will be automatically exited when the
 // program quits.
 func ExitAltScreen() Msg {
-	return disableMode(ansi.AltScreenBufferMode.String())
+	return disableModeMsg{ansi.AltScreenSaveCursorMode}
 }
+
+// enableMouseCellMotionMsg is an internal message that signals to enable mouse cell
+// motion events.
+type enableMouseCellMotionMsg struct{}
 
 // EnableMouseCellMotion is a special command that enables mouse click,
 // release, and wheel events. Mouse movement events are also captured if
@@ -52,11 +56,12 @@ func ExitAltScreen() Msg {
 // Because commands run asynchronously, this command should not be used in your
 // model's Init function. Use the WithMouseCellMotion ProgramOption instead.
 func EnableMouseCellMotion() Msg {
-	return sequenceMsg{
-		func() Msg { return enableMode(ansi.MouseCellMotionMode.String()) },
-		func() Msg { return enableMode(ansi.MouseSgrExtMode.String()) },
-	}
+	return enableMouseCellMotionMsg{}
 }
+
+// enableMouseAllMotionMsg is an internal message that signals to enable mouse
+// all motion events.
+type enableMouseAllMotionMsg struct{}
 
 // EnableMouseAllMotion is a special command that enables mouse click, release,
 // wheel, and motion events, which are delivered regardless of whether a mouse
@@ -68,19 +73,16 @@ func EnableMouseCellMotion() Msg {
 // Because commands run asynchronously, this command should not be used in your
 // model's Init function. Use the WithMouseAllMotion ProgramOption instead.
 func EnableMouseAllMotion() Msg {
-	return sequenceMsg{
-		func() Msg { return enableMode(ansi.MouseAllMotionMode.String()) },
-		func() Msg { return enableMode(ansi.MouseSgrExtMode.String()) },
-	}
+	return enableMouseAllMotionMsg{}
 }
+
+// disableMouse motionMsg is an internal message that signals to disable mouse
+// motion events.
+type disableMouseMotionMsg struct{}
 
 // DisableMouse is a special command that stops listening for mouse events.
 func DisableMouse() Msg {
-	return sequenceMsg{
-		func() Msg { return disableMode(ansi.MouseCellMotionMode.String()) },
-		func() Msg { return disableMode(ansi.MouseAllMotionMode.String()) },
-		func() Msg { return disableMode(ansi.MouseSgrExtMode.String()) },
-	}
+	return disableMouseMotionMsg{}
 }
 
 // HideCursor is a special command for manually instructing Bubble Tea to hide
@@ -88,13 +90,13 @@ func DisableMouse() Msg {
 // to show the cursor, which is normally hidden for the duration of a Bubble
 // Tea program's lifetime. You will most likely not need to use this command.
 func HideCursor() Msg {
-	return disableMode(ansi.CursorEnableMode.String())
+	return disableModeMsg{ansi.TextCursorEnableMode}
 }
 
 // ShowCursor is a special command for manually instructing Bubble Tea to show
 // the cursor.
 func ShowCursor() Msg {
-	return enableMode(ansi.CursorEnableMode.String())
+	return enableModeMsg{ansi.TextCursorEnableMode}
 }
 
 // EnableBracketedPaste is a special command that tells the Bubble Tea program
@@ -103,7 +105,7 @@ func ShowCursor() Msg {
 // Note that bracketed paste will be automatically disabled when the
 // program quits.
 func EnableBracketedPaste() Msg {
-	return enableMode(ansi.BracketedPasteMode.String())
+	return enableModeMsg{ansi.BracketedPasteMode}
 }
 
 // DisableBracketedPaste is a special command that tells the Bubble Tea program
@@ -112,42 +114,32 @@ func EnableBracketedPaste() Msg {
 // Note that bracketed paste will be automatically disabled when the
 // program quits.
 func DisableBracketedPaste() Msg {
-	return disableMode(ansi.BracketedPasteMode.String())
+	return disableModeMsg{ansi.BracketedPasteMode}
 }
 
 // EnableGraphemeClustering is a special command that tells the Bubble Tea
 // program to enable grapheme clustering. This is enabled by default.
 func EnableGraphemeClustering() Msg {
-	return enableMode(ansi.GraphemeClusteringMode.String())
+	return enableModeMsg{ansi.GraphemeClusteringMode}
 }
 
 // DisableGraphemeClustering is a special command that tells the Bubble Tea
 // program to disable grapheme clustering. This mode will be disabled
 // automatically when the program quits.
 func DisableGraphemeClustering() Msg {
-	return disableMode(ansi.GraphemeClusteringMode.String())
+	return disableModeMsg{ansi.GraphemeClusteringMode}
 }
 
-// EnabledReportFocus is a special command that tells the Bubble Tea program
-// to enable focus reporting.
-func EnabledReportFocus() Msg { return enableMode(ansi.ReportFocusMode.String()) }
+// EnableReportFocus is a special command that tells the Bubble Tea program to
+// enable focus reporting.
+func EnableReportFocus() Msg { return enableModeMsg{ansi.FocusEventMode} }
 
-// DisabledReportFocus is a special command that tells the Bubble Tea program
-// to disable focus reporting.
-func DisabledReportFocus() Msg { return disableMode(ansi.ReportFocusMode.String()) }
+// DisableReportFocus is a special command that tells the Bubble Tea program to
+// disable focus reporting.
+func DisableReportFocus() Msg { return disableModeMsg{ansi.FocusEventMode} }
 
 // enableModeMsg is an internal message that signals to set a terminal mode.
-type enableModeMsg string
-
-// enableMode is an internal command that signals to set a terminal mode.
-func enableMode(mode string) Msg {
-	return enableModeMsg(mode)
-}
+type enableModeMsg struct{ ansi.Mode }
 
 // disableModeMsg is an internal message that signals to unset a terminal mode.
-type disableModeMsg string
-
-// disableMode is an internal command that signals to unset a terminal mode.
-func disableMode(mode string) Msg {
-	return disableModeMsg(mode)
-}
+type disableModeMsg struct{ ansi.Mode }

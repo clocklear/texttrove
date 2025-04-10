@@ -2,20 +2,12 @@ package tea
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"strings"
 	"sync"
 
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
-)
-
-const (
-	// defaultFramerate specifies the maximum interval at which we should
-	// update the view.
-	defaultFPS = 60
-	maxFPS     = 120
 )
 
 // standardRenderer is a framerate-based terminal renderer, updating the view
@@ -25,16 +17,15 @@ const (
 // to exclude ranges of lines, allowing them to be written to directly.
 type standardRenderer struct {
 	mtx *sync.Mutex
-	out io.Writer
-
-	// the color profile to use
-	profile colorprofile.Profile
+	out *colorprofile.Writer
 
 	buf                bytes.Buffer
 	queuedMessageLines []string
+	done               chan struct{}
 	lastRender         string
 	lastRenderedLines  []string
 	linesRendered      int
+	altLinesRendered   int
 
 	// cursor visibility state
 	cursorHidden bool
@@ -50,58 +41,69 @@ type standardRenderer struct {
 	ignoreLines map[int]struct{}
 }
 
-// newStandardRenderer creates a new renderer. Normally you'll want to initialize it
+// newRenderer creates a new renderer. Normally you'll want to initialize it
 // with os.Stdout as the first argument.
-func newStandardRenderer(p colorprofile.Profile) renderer {
+func newRenderer(out io.Writer) renderer {
 	r := &standardRenderer{
+		out: &colorprofile.Writer{
+			Forward: out,
+		},
 		mtx:                &sync.Mutex{},
+		done:               make(chan struct{}),
 		queuedMessageLines: []string{},
-		profile:            p,
 	}
 	return r
 }
 
-// setOutput sets the output for the renderer.
-func (r *standardRenderer) setOutput(out io.Writer) {
+// setColorProfile sets the color profile.
+func (r *standardRenderer) setColorProfile(p colorprofile.Profile) {
 	r.mtx.Lock()
-	r.out = &colorprofile.Writer{
-		Forward: out,
-		Profile: r.profile,
-	}
+	r.out.Profile = p
 	r.mtx.Unlock()
+}
+
+// reset resets the renderer to its initial state.
+func (r *standardRenderer) reset() {
+	// no-op
 }
 
 // close closes the renderer and flushes any remaining data.
-func (r *standardRenderer) close() (err error) {
-	// Move the cursor back to the beginning of the line
-	// NOTE: execute locks the mutex
-	r.execute(ansi.EraseEntireLine + "\r")
+func (r *standardRenderer) close() error {
+	// flush locks the mutex
+	r.flush() //nolint:errcheck
 
-	return
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	r.execute(ansi.EraseEntireLine)
+	// Move the cursor back to the beginning of the line
+	r.execute("\r")
+
+	return nil
 }
 
-// execute writes the given sequence to the output.
+// execute writes a sequence to the terminal.
 func (r *standardRenderer) execute(seq string) {
-	r.mtx.Lock()
 	_, _ = io.WriteString(r.out, seq)
-	r.mtx.Unlock()
 }
 
 // flush renders the buffer.
-func (r *standardRenderer) flush() (err error) {
+func (r *standardRenderer) flush() error {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
 	if r.buf.Len() == 0 || r.buf.String() == r.lastRender {
 		// Nothing to do.
-		return
+		return nil
 	}
 
 	// Output buffer.
 	buf := &bytes.Buffer{}
 
 	// Moving to the beginning of the section, that we rendered.
-	if r.linesRendered > 1 {
+	if r.altScreenActive {
+		buf.WriteString(ansi.CursorHomePosition)
+	} else if r.linesRendered > 1 {
 		buf.WriteString(ansi.CursorUp(r.linesRendered - 1))
 	}
 
@@ -145,7 +147,7 @@ func (r *standardRenderer) flush() (err error) {
 		if _, ignore := r.ignoreLines[i]; ignore || canSkip {
 			// Unless this is the last line, move the cursor down.
 			if i < len(newLines)-1 {
-				buf.WriteString(ansi.CursorDown1)
+				buf.WriteByte('\n')
 			}
 			continue
 		}
@@ -187,11 +189,15 @@ func (r *standardRenderer) flush() (err error) {
 	}
 
 	// Clearing left over content from last render.
-	if r.linesRendered > len(newLines) {
+	if r.lastLinesRendered() > len(newLines) {
 		buf.WriteString(ansi.EraseScreenBelow)
 	}
 
-	r.linesRendered = len(newLines)
+	if r.altScreenActive {
+		r.altLinesRendered = len(newLines)
+	} else {
+		r.linesRendered = len(newLines)
+	}
 
 	// Make sure the cursor is at the start of the last line to keep rendering
 	// behavior consistent.
@@ -199,12 +205,12 @@ func (r *standardRenderer) flush() (err error) {
 		// This case fixes a bug in macOS terminal. In other terminals the
 		// other case seems to do the job regardless of whether or not we're
 		// using the full terminal window.
-		buf.WriteString(ansi.SetCursorPosition(0, r.linesRendered))
+		buf.WriteString(ansi.CursorPosition(0, len(newLines)))
 	} else {
-		buf.WriteString(ansi.CursorLeft(r.width))
+		buf.WriteString(ansi.CursorBackward(r.width))
 	}
 
-	_, err = r.out.Write(buf.Bytes())
+	_, _ = r.out.Write(buf.Bytes())
 	r.lastRender = r.buf.String()
 
 	// Save previously rendered lines for comparison in the next render. If we
@@ -212,12 +218,21 @@ func (r *standardRenderer) flush() (err error) {
 	// See https://github.com/charmbracelet/bubbletea/pull/1233
 	r.lastRenderedLines = newLines
 	r.buf.Reset()
-	return
+
+	return nil
 }
 
-// render renders the frame to the internal buffer. The buffer will be
-// outputted via the ticker which calls flush().
-func (r *standardRenderer) render(s string) {
+// lastLinesRendered returns the number of lines rendered lastly.
+func (r *standardRenderer) lastLinesRendered() int {
+	if r.altScreenActive {
+		return r.altLinesRendered
+	}
+	return r.linesRendered
+}
+
+// write writes to the internal buffer. The buffer will be outputted via the
+// ticker which calls flush().
+func (r *standardRenderer) render(s string, _ *Cursor) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	r.buf.Reset()
@@ -233,31 +248,66 @@ func (r *standardRenderer) render(s string) {
 	_, _ = r.buf.WriteString(s)
 }
 
-// repaint forces a full repaint.
 func (r *standardRenderer) repaint() {
 	r.lastRender = ""
 	r.lastRenderedLines = nil
 }
 
-// reset resets the standardRenderer to its initial state.
-func (r *standardRenderer) reset() {
-	r.repaint()
-}
-
 func (r *standardRenderer) clearScreen() {
-	r.execute(ansi.EraseEntireScreen + ansi.HomeCursorPosition)
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	r.execute(ansi.EraseEntireScreen)
+	r.execute(ansi.CursorHomePosition)
+
 	r.repaint()
 }
 
-// setAltScreenBuffer restores the terminal screen buffer state.
-func (r *standardRenderer) setAltScreenBuffer(on bool) {
-	if on {
-		// Ensure that the terminal is cleared, even when it doesn't support
-		// alt screen (or alt screen support is disabled, like GNU screen by
-		// default).
-		r.execute(ansi.EraseEntireScreen)
-		r.execute(ansi.HomeCursorPosition)
+func (r *standardRenderer) enterAltScreen() {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	if r.altScreenActive {
+		return
 	}
+
+	r.altScreenActive = true
+	r.execute(ansi.SetAltScreenSaveCursorMode)
+
+	// Ensure that the terminal is cleared, even when it doesn't support
+	// alt screen (or alt screen support is disabled, like GNU screen by
+	// default).
+	//
+	// Note: we can't use r.clearScreen() here because the mutex is already
+	// locked.
+	r.execute(ansi.EraseEntireScreen)
+	r.execute(ansi.CursorHomePosition)
+
+	// cmd.exe and other terminals keep separate cursor states for the AltScreen
+	// and the main buffer. We have to explicitly reset the cursor visibility
+	// whenever we enter AltScreen.
+	if r.cursorHidden {
+		r.execute(ansi.HideCursor)
+	} else {
+		r.execute(ansi.ShowCursor)
+	}
+
+	// Entering the alt screen resets the lines rendered count.
+	r.altLinesRendered = 0
+
+	r.repaint()
+}
+
+func (r *standardRenderer) exitAltScreen() {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	if !r.altScreenActive {
+		return
+	}
+
+	r.altScreenActive = false
+	r.execute(ansi.ResetAltScreenSaveCursorMode)
 
 	// cmd.exe and other terminals keep separate cursor states for the AltScreen
 	// and the main buffer. We have to explicitly reset the cursor visibility
@@ -267,125 +317,41 @@ func (r *standardRenderer) setAltScreenBuffer(on bool) {
 	} else {
 		r.execute(ansi.ShowCursor)
 	}
+
+	r.repaint()
 }
 
-// update handles internal messages for the renderer.
-func (r *standardRenderer) update(msg Msg) {
-	switch msg := msg.(type) {
-	case ColorProfileMsg:
-		r.profile = msg.Profile
+func (r *standardRenderer) showCursor() {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
 
-	case enableModeMsg:
-		switch string(msg) {
-		case ansi.AltScreenBufferMode.String():
-			if r.altScreenActive {
-				return
-			}
+	r.cursorHidden = false
+	r.execute(ansi.ShowCursor)
+}
 
-			r.setAltScreenBuffer(true)
-			r.altScreenActive = true
-			r.repaint()
-		case ansi.CursorEnableMode.String():
-			if !r.cursorHidden {
-				return
-			}
+func (r *standardRenderer) hideCursor() {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
 
-			r.cursorHidden = false
-		}
+	r.cursorHidden = true
+	r.execute(ansi.HideCursor)
+}
 
-	case disableModeMsg:
-		switch string(msg) {
-		case ansi.AltScreenBufferMode.String():
-			if !r.altScreenActive {
-				return
-			}
+func (r *standardRenderer) resize(width, height int) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
 
-			r.setAltScreenBuffer(false)
-			r.altScreenActive = false
-			r.repaint()
-		case ansi.CursorEnableMode.String():
-			if r.cursorHidden {
-				return
-			}
+	r.width = width
+	r.height = height
+	r.repaint()
+}
 
-			r.cursorHidden = true
-		}
-
-	case rendererWriter:
-		r.setOutput(msg.Writer)
-
-	case WindowSizeMsg:
-		r.resize(msg.Width, msg.Height)
-
-	case clearScreenMsg:
-		r.clearScreen()
-
-	case printLineMessage:
-		r.insertAbove(msg.messageBody)
-
-	case repaintMsg:
-		// Force a repaint by clearing the render cache as we slide into a
-		// render.
+func (r *standardRenderer) insertAbove(s string) {
+	if !r.altScreenActive {
+		lines := strings.Split(s, "\n")
 		r.mtx.Lock()
+		r.queuedMessageLines = append(r.queuedMessageLines, lines...)
 		r.repaint()
 		r.mtx.Unlock()
-	}
-}
-
-// resize sets the size of the terminal.
-func (r *standardRenderer) resize(w int, h int) {
-	r.mtx.Lock()
-	r.width = w
-	r.height = h
-	r.repaint()
-	r.mtx.Unlock()
-}
-
-// insertAbove inserts lines above the current frame. This only works in
-// inline mode.
-func (r *standardRenderer) insertAbove(s string) {
-	if r.altScreenActive {
-		return
-	}
-
-	lines := strings.Split(s, "\n")
-	r.mtx.Lock()
-	r.queuedMessageLines = append(r.queuedMessageLines, lines...)
-	r.repaint()
-	r.mtx.Unlock()
-}
-
-type printLineMessage struct {
-	messageBody string
-}
-
-// Println prints above the Program. This output is unmanaged by the program and
-// will persist across renders by the Program.
-//
-// Unlike fmt.Println (but similar to log.Println) the message will be print on
-// its own line.
-//
-// If the altscreen is active no output will be printed.
-func Println(args ...interface{}) Cmd {
-	return func() Msg {
-		return printLineMessage{
-			messageBody: fmt.Sprint(args...),
-		}
-	}
-}
-
-// Printf prints above the Program. It takes a format template followed by
-// values similar to fmt.Printf. This output is unmanaged by the program and
-// will persist across renders by the Program.
-//
-// Unlike fmt.Printf (but similar to log.Printf) the message will be print on
-// its own line.
-//
-// If the altscreen is active no output will be printed.
-func Printf(template string, args ...interface{}) Cmd {
-	return func() Msg {
-		return printLineMessage{
-			messageBody: fmt.Sprintf(template, args...),
-		}
 	}
 }

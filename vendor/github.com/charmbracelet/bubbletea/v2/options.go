@@ -168,20 +168,6 @@ func WithMouseAllMotion() ProgramOption {
 	}
 }
 
-// WithoutRenderer disables the renderer. When this is set output and log
-// statements will be plainly sent to stdout (or another output if one is set)
-// without any rendering and redrawing logic. In other words, printing and
-// logging will behave the same way it would in a non-TUI commandline tool.
-// This can be useful if you want to use the Bubble Tea framework for a non-TUI
-// application, or to provide an additional non-TUI mode to your Bubble Tea
-// programs. For example, your program could behave like a daemon if output is
-// not a TTY.
-func WithoutRenderer() ProgramOption {
-	return func(p *Program) {
-		p.renderer = &nilRenderer{}
-	}
-}
-
 // WithFilter supplies an event filter that will be invoked before Bubble Tea
 // processes a tea.Msg. The event filter can return any tea.Msg which will then
 // get handled by Bubble Tea instead of the original event. If the event filter
@@ -245,14 +231,14 @@ func WithReportFocus() ProgramOption {
 //
 // This is not supported on all terminals. On Windows, these features are
 // enabled by default.
-func WithKeyboardEnhancements(enhancements ...KeyboardEnhancement) ProgramOption {
-	var ke keyboardEnhancements
+func WithKeyboardEnhancements(enhancements ...KeyboardEnhancementOption) ProgramOption {
+	var ke KeyboardEnhancements
 	for _, e := range append(enhancements, withKeyDisambiguation) {
 		e(&ke)
 	}
 	return func(p *Program) {
 		p.startupOptions |= withKeyboardEnhancements
-		p.keyboard = ke
+		p.requestedEnhancements = ke
 	}
 }
 
@@ -271,25 +257,6 @@ func WithGraphemeClustering() ProgramOption {
 	}
 }
 
-// experimentalOptions are experimental features that are not yet stable. These
-// features may change or be removed in future versions.
-type experimentalOptions []string
-
-// has returns true if the experimental option is enabled.
-func (e experimentalOptions) has(option string) bool {
-	for _, o := range e {
-		if o == option {
-			return true
-		}
-	}
-	return false
-}
-
-const (
-	// Ferocious enables the "ferocious" renderer.
-	experimentalFerocious = "ferocious"
-)
-
 // WithColorProfile sets the color profile that the program will use. This is
 // useful when you want to force a specific color profile. By default, Bubble
 // Tea will try to detect the terminal's color profile from environment
@@ -302,14 +269,13 @@ func WithColorProfile(profile colorprofile.Profile) ProgramOption {
 	}
 }
 
-// WithFerociousRenderer tells Bubble Tea to use the new shiny "ferocious"
-// renderer. This renderer is experimental and may change or be removed in
-// future versions.
-//
-// The ferocious renderer is a new renderer that is faster and more efficient
-// than the default renderer. It is also more ferocious ;)
-func WithFerociousRenderer() ProgramOption { //nolint:unused
+// WithWindowSize sets the initial size of the terminal window. This is useful
+// when you need to set the initial size of the terminal window, for example
+// during testing or when you want to run your program in a non-interactive
+// environment.
+func WithWindowSize(width, height int) ProgramOption {
 	return func(p *Program) {
-		p.startupOptions |= withFerociousRenderer
+		p.width = width
+		p.height = height
 	}
 }
