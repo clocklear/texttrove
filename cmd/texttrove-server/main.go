@@ -38,9 +38,6 @@ type config struct {
 	Database struct {
 		Path string `default:"texttrove.db"`
 	}
-	Ollama struct {
-		URL string `default:"http://localhost:11434"`
-	}
 }
 
 func main() {
@@ -55,7 +52,7 @@ func main() {
 	rag, err := rag.NewChromemRag(cfg.Database.Path, rag.ModelPrompts{
 		QueryPrefix:     cfg.Model.Embedding.PromptPrefix.Query,
 		EmbeddingPrefix: cfg.Model.Embedding.PromptPrefix.Embedding,
-	}, chromem.NewEmbeddingFuncOllama(cfg.Model.Embedding.Name, cfg.Ollama.URL))
+	}, chromem.NewEmbeddingFuncOllama(cfg.Model.Embedding.Name, ""))
 	if err != nil {
 		log.Fatalf("Failed to create RAG: %v", err)
 	}
@@ -63,7 +60,6 @@ func main() {
 	// Create LLM instance
 	llm, err := ollama.New(
 		ollama.WithModel(cfg.Model.Conversation),
-		ollama.WithServerURL(cfg.Ollama.URL),
 	)
 	if err != nil {
 		log.Fatalf("Failed to create LLM: %v", err)
